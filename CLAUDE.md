@@ -4,9 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-This repository currently contains **only the product spec** — `ashenaiybot-prd-and-backlog.md` — no code, no `package.json`, no git history yet. There are no build/lint/test commands to run because nothing has been scaffolded. The very first implementation work (EPIC 0 below) is what creates the monorepo, tooling, and CI — once that lands, update this file with the real commands (install/build/lint/test/dev, and how to run a single test).
+**EPIC 0 (Infrastructure & Project Foundation) and EPIC 1 (Core Data Model & Backend API Skeleton) are implemented and verified** — pnpm workspace monorepo, Docker Compose (prod + dev), Nginx, GitHub Actions CI, full Prisma schema with an applied initial migration, an idempotent seed script, a thin User/Profile REST API with real Telegram `initData` HMAC validation, and a grammY identity-resolution middleware. EPIC 2 onward (bot onboarding, matching, chat relay, etc.) has not been built yet.
 
-**Local dev environment notes** (observed on this machine, re-check if it changes): Node v22 present, `pnpm` not preinstalled but available via `corepack enable` (corepack present). Docker Engine is present but only the standalone `docker-compose` binary is available, not the `docker compose` v2 CLI plugin — compose YAML should stay compatible with both invocations. Network access to the npm registry works but with high latency (tens of seconds per request) — package installs may need generous timeouts.
+**Commands** (run from repo root):
+```bash
+pnpm install              # install all workspace deps
+pnpm run build:packages   # build packages/db (incl. `prisma generate`) + packages/shared
+pnpm build                # build every app/package — pnpm -r already orders packages/* before apps/* correctly
+pnpm typecheck            # runs build:packages first, then typechecks every workspace project (see note below)
+pnpm lint                 # eslint across the whole repo (flat config, one shared ruleset)
+pnpm test                 # vitest run, whole repo (single root config, no per-package vitest.config)
+pnpm dev                   # bot-api (tsx watch) + both Next apps in parallel, plus packages/db and packages/shared in `tsc --watch`
+pnpm db:migrate            # `prisma migrate dev` against DATABASE_URL — needs a real Postgres reachable (e.g. via docker-compose.dev.yml)
+pnpm db:seed               # idempotent seed: 20 users, 5 matches (3 active/2 ended), 1 pending report
+```
+To run a single vitest test file: `pnpm exec vitest run path/to/file.test.ts` from repo root (root `vitest.config.ts` globs `apps/*/src/**/*.test.ts` and `packages/*/src/**/*.test.ts`).
+
+**Known environment gotchas hit while building this** (re-verify if they seem to not apply anymore):
+- `pnpm` isn't preinstalled; `corepack enable` fails with `EACCES` in some sandboxes — use `npx pnpm@<version>` as a workaround, or fix corepack's permissions.
+- Docker CLI may be present with **no running daemon** and no Desktop app — `colima start` (via `brew install colima`) is a working fallback; afterwards use `docker-compose` (v1 standalone binary), not `docker compose` (v2 plugin isn't installed).
+- If you switch Docker contexts (e.g. Desktop → colima), `~/.docker/config.json`'s stale `credsStore` (e.g. `"desktop"`) breaks every pull with a `docker-credential-desktop not found` error — remove that key if `auths` is empty.
+- The npm registry connection from this network is slow/flaky (frequent `ECONNRESET`, likely the same Iran-access risk noted in the PRD's own §9) — give installs generous timeouts and prefer `run_in_background` with direct (non-`tail`-piped) logging so progress is actually visible.
+- A local HTTP(S) proxy (`http_proxy`/`https_proxy` env vars) is active and intercepts even `curl`/local-server requests to `127.0.0.1` — use `--noproxy '*'` when curling a locally-running dev server, or you'll see confusing `502` responses that look like a server bug.
+- Apps resolve `@ashena/db`/`@ashena/shared` via their built `dist/` output (package.json `main`/`types`), not TS source. Each package's own `typecheck` script uses `--noEmit`, so running `pnpm -r run typecheck` alone never produces that `dist/` — that's why the root `typecheck` script runs `build:packages` first. `pnpm build` doesn't need this: pnpm already runs `packages/*`'s `build` (which does emit) before `apps/*`'s in topological order.
+- Prisma CLI (`migrate`/`validate`) only auto-loads a `.env` from the **same directory as `schema.prisma`**, not the repo root — `packages/db/.env` is a symlink to `../../.env` for this reason (gitignored either way).
 
 ## What this project is
 
@@ -29,18 +50,28 @@ A separate Next.js **Admin Panel** handles user management, report/ban moderatio
 - **§10 Epic ordering table** — the required build order and the reasoning for it.
 - **Epics & User Stories (from "EPIC 0" onward)** — the actual backlog, in English, each with Acceptance Criteria.
 
-## Planned architecture (from the PRD — not yet built)
+## Architecture (implemented — EPIC 0/1)
 
-**Monorepo layout** (pnpm workspaces or Turborepo):
-- `apps/bot-api` — Node.js + TypeScript backend: grammY bot layer, Fastify REST API (`/api/v1/...`), matching engine, chat relay, moderation jobs (BullMQ). Bot handlers and REST endpoints must call the *same* service-layer functions per module (users/profiles/matching/chat/moderation/admin) — no business logic embedded directly in a grammY handler or Fastify route.
-- `apps/web-miniapp` — Next.js 15 App Router Mini App, using `@telegram-apps/sdk` / `@telegram-apps/sdk-react`, validating `initData` server-side on every request.
-- `apps/web-admin` — Next.js 15 Admin Panel, NextAuth (Credentials + bcrypt), role-gated routes.
-- `packages/db` — Prisma schema + generated client, imported by `bot-api`.
-- `packages/shared` — Zod schemas/types shared by backend and both frontends (validation must not diverge between bot and Mini App for the same fields).
+**Monorepo layout** (plain pnpm workspaces, no Turborepo):
+- `apps/bot-api` — Node.js + TypeScript backend: grammY bot layer (`src/bot.ts`, `src/bot/`), Fastify REST API (`src/server.ts`, `src/routes/v1/`), a BullMQ worker entrypoint (`src/worker.ts`, no jobs registered yet). Service layer lives in `src/modules/{users,profiles,matching,chat,moderation,admin}/service.ts` — `users` and `profiles` have real CRUD; the other four are intentional empty stubs (`export {}`) until their epic (3/4/5/7 respectively) fills them in. Bot handlers and REST routes both call the *same* service functions — no business logic embedded directly in a grammY handler or Fastify route, only orchestration.
+- `apps/web-miniapp` — Next.js 15 App Router Mini App skeleton (hello-world page only so far). Real Telegram SDK integration, forms, and swipe deck are EPIC 6.
+- `apps/web-admin` — Next.js 15 Admin Panel skeleton (hello-world page only so far). Real auth/moderation UI is EPIC 7.
+- `packages/db` — Prisma schema (full EPIC 1 data model, see below) + a singleton `prisma` client. **Re-exports everything from `@prisma/client`** (`export * from "@prisma/client"` in `src/index.ts`) — other packages/apps import model/enum types from `@ashena/db`, never from `@prisma/client` directly, so this package stays the sole owner of the Prisma dependency.
+- `packages/shared` — `parseEnv()` helper (used by every backend env-loading module), `APP_NAME`, and `src/api/*` — Zod request-validation schemas shared between `apps/bot-api`'s REST routes and (eventually) `apps/web-miniapp`'s forms, so validation can't drift between the bot and the Mini App for the same field (e.g. `upsertProfileSchema`).
 
-**Infra**: single Docker Compose stack (`nginx`, `api`, `web-miniapp`, `web-admin`, `postgres`, `redis`, `worker`) on one VPS. Nginx does TLS termination, path routing (`/api/*`, `/`, `/admin/*`), and edge rate-limiting. Redis backs matchmaking queue, session state, and rate-limit counters; BullMQ (on the same Redis) runs async jobs (photo moderation, idle session cleanup, broadcasts).
+**Auth plumbing (US-1.4)**: `apps/bot-api/src/lib/telegramInitData.ts` implements Telegram's official Mini App `initData` HMAC-SHA256 validation from scratch (no external validation package) — `secret_key = HMAC_SHA256(data=bot_token, key="WebAppData")`, `expected_hash = HMAC_SHA256(data=data_check_string, key=secret_key)`, timing-safe comparison, `auth_date` expiry check. `apps/bot-api/src/plugins/miniAppAuth.ts` wraps it as a Fastify preHandler (`x-telegram-init-data` header → 401 on anything invalid, else resolves/creates the `User` via `findOrCreateUserByTelegramId`). The bot side gets the same resolution via `apps/bot-api/src/bot/identityMiddleware.ts`, a grammY middleware setting `ctx.internalUser` (typed via the `BotContext` flavor in `bot/context.ts`) before any command handler runs.
+
+**Infra**: single Docker Compose stack (`nginx`, `api`, `web-miniapp`, `web-admin`, `postgres`, `redis`, `worker`) on one VPS — `docker-compose.yml` for prod, `docker-compose.dev.yml` for local hot-reload dev (bind-mounts the repo over a `deps`-stage image, `tsx watch`/`next dev` as the command). Nginx (`nginx/`) does path routing (`/api/*`, `/`, `/admin/*`) and a baseline rate-limit zone over plain HTTP; the HTTPS server block is a template at `nginx/conf.d/ssl.conf.disabled` (rename once real certs exist at `nginx/certs/`, per the comments in `nginx/conf.d/default.conf`). Redis backs matchmaking queue/session state/rate-limit counters (later epics); BullMQ (same Redis) will run async jobs (photo moderation, idle session cleanup, broadcasts) — the `worker` service currently just proves Postgres+Redis connectivity.
 
 **Design system**: Geist (`geist` npm package for Sans/Mono fonts) + Tailwind CSS v4 + shadcn/ui themed on Geist tokens — not the archived `geist-ui` community package.
+
+## Data model notes (`packages/db/prisma/schema.prisma`) — non-obvious decisions later epics must respect
+
+- `User.gender`/`birthDate` are **nullable**, not required: `identityMiddleware`/`miniAppAuth` create a bare `User` row on first Telegram contact (US-1.4), before EPIC 2 onboarding has collected anything. Treat "onboarding complete" as "these plus `ageAttestedAt` are all non-null", not a separate boolean flag.
+- `Match.userAId`/`userBId` must always be written as a **canonical (sorted) pair** — smaller id first — by whichever service creates the row (EPIC 3's matching engine, and `packages/db/prisma/seed.ts` already does this via `canonicalPair()`). The `@@unique([userAId, userBId])` constraint only catches duplicate matches if this ordering is respected; Prisma can't express an unordered-pair constraint directly.
+- `ChatSession` has both `endedReason` (enum: `user_ended` / `reported` / `blocked` / `banned` / `idle_timeout`) and a nullable `endedByUserId` — the latter is null for system-initiated endings (e.g. `idle_timeout`), so don't assume every ended session has an ending user.
+- `SwipeAction` has `@@unique([actorUserId, targetUserId])` specifically so EPIC 3's double-tap idempotency (US-3.3) can rely on a DB constraint rather than app-level de-duping alone.
+- `Report.reason` is a closed enum matching EPIC 4's fixed reason list (harassment/unwanted_content/suspected_minor/spam/other) — extend the enum (a migration) rather than accepting free text if new reasons are needed.
 
 ## Goals that should shape design decisions (§3)
 
@@ -91,3 +122,5 @@ A separate Next.js **Admin Panel** handles user management, report/ban moderatio
 ## Working through the backlog
 
 Per §10 of the PRD: implement one EPIC at a time, in the given order (EPIC 0 → 1 → 2 → … → 8; EPIC 9 is reference-only, out of v1 scope). Each epic depends on the previous one's data/services being in place. The PRD's own recommendation is a fresh Claude Code session/context per epic with a commit in between — keep that discipline when picking up work here.
+
+**Progress**: EPIC 0 and EPIC 1 done and verified (typecheck/lint/test/build all pass; migration + seed run clean against a live Postgres; REST endpoints manually exercised end-to-end). Next up is EPIC 2 (Telegram Bot: Onboarding & Profile, Inline Keyboard mode) — this is where `bot.ts`'s placeholder `/start` reply gets replaced with the real age-gate/gender/birth-date/bio/photo flow described in the PRD.
