@@ -38,3 +38,20 @@ export interface UpdateUserInput {
 export function updateUser(id: string, input: UpdateUserInput): Promise<User> {
   return prisma.user.update({ where: { id }, data: input });
 }
+
+export type OnboardingStep = "age_gate" | "gender" | "birth_date" | "complete";
+
+/**
+ * Derives which required onboarding step (EPIC 2, US-2.1..2.3) a user is on
+ * from persisted fields alone — no separate "onboarding complete" flag, per
+ * the data model note in CLAUDE.md. This is what lets `/start`/`/menu`
+ * resume a user exactly where they left off after a restart.
+ */
+export function deriveOnboardingStep(
+  user: Pick<User, "ageAttestedAt" | "gender" | "birthDate">,
+): OnboardingStep {
+  if (!user.ageAttestedAt) return "age_gate";
+  if (!user.gender) return "gender";
+  if (!user.birthDate) return "birth_date";
+  return "complete";
+}

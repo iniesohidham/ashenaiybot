@@ -1,19 +1,30 @@
 import { Bot } from "grammy";
-import { APP_NAME } from "@ashena/shared";
 import type { BotContext } from "./bot/context.js";
 import { identityMiddleware } from "./bot/identityMiddleware.js";
+import { createInMemoryAwaitingInputStore } from "./bot/awaitingInput.js";
+import { registerOnboardingHandlers } from "./bot/onboarding.js";
 
 /**
- * `/start` reply is still EPIC 0 "hello world" only — real onboarding
- * replaces this handler in EPIC 2. identityMiddleware (US-1.4) is real:
- * every update now resolves/creates the internal User record.
+ * identityMiddleware (US-1.4) resolves/creates the internal User record for
+ * every update. registerOnboardingHandlers (EPIC 2) wires the full
+ * age-gate/gender/birth-date/bio/interests/photo onboarding and edit-profile
+ * flow on top of it.
  */
-export function buildBot(token: string): Bot<BotContext> {
+export function buildBot(token: string, miniAppUrl: string): Bot<BotContext> {
   const bot = new Bot<BotContext>(token);
   bot.use(identityMiddleware);
 
-  bot.command("start", async (ctx) => {
-    await ctx.reply(`${APP_NAME} is alive. Onboarding lands in EPIC 2.`);
+  registerOnboardingHandlers(bot, {
+    awaitingInput: createInMemoryAwaitingInputStore(),
+    miniAppUrl,
+  });
+
+  // grammY's default error handler stops the bot and rethrows, which would
+  // otherwise crash the whole process (this bot and the REST API share one
+  // process — see index.ts) on any single update that throws, e.g. a
+  // Telegram API error. Log and keep polling instead.
+  bot.catch((err) => {
+    console.error("[bot] unhandled error while processing update", err.ctx.update.update_id, err.error);
   });
 
   return bot;
