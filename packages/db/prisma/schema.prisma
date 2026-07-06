@@ -1,0 +1,13 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Intentionally no models yet — EPIC 0 only proves the client can connect to
+// Postgres. The full data model (User, Profile, SwipeAction, Match,
+// ChatSession, Message, Report, Block, AdminUser, BanRecord) is added in
+// EPIC 1 (US-1.1), per ashenaiybot-prd-and-backlog.md §6.

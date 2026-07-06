@@ -1,0 +1,112 @@
+name: ashenaiybot-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_dev:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Dev services build only up to the `deps` stage (deps installed, no source
+  # copied/built) and bind-mount the repo on top so `tsx watch`/`next dev`
+  # pick up local edits. Anonymous volumes on each node_modules path stop the
+  # bind mount from hiding the node_modules installed inside the image.
+  api:
+    build:
+      context: .
+      dockerfile: apps/bot-api/Dockerfile
+      target: deps
+    command: pnpm --filter @ashena/bot-api run dev
+    env_file: .env
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/repo
+      - /repo/node_modules
+      - /repo/apps/bot-api/node_modules
+      - /repo/packages/db/node_modules
+      - /repo/packages/shared/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/bot-api/Dockerfile
+      target: deps
+    command: pnpm --filter @ashena/bot-api run dev:worker
+    env_file: .env
+    volumes:
+      - .:/repo
+      - /repo/node_modules
+      - /repo/apps/bot-api/node_modules
+      - /repo/packages/db/node_modules
+      - /repo/packages/shared/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web-miniapp:
+    build:
+      context: .
+      dockerfile: apps/web-miniapp/Dockerfile
+      target: deps
+    command: pnpm --filter @ashena/web-miniapp run dev
+    env_file: .env
+    ports:
+      - "3001:3001"
+    volumes:
+      - .:/repo
+      - /repo/node_modules
+      - /repo/apps/web-miniapp/node_modules
+      - /repo/apps/web-miniapp/.next
+      - /repo/packages/shared/node_modules
+
+  web-admin:
+    build:
+      context: .
+      dockerfile: apps/web-admin/Dockerfile
+      target: deps
+    command: pnpm --filter @ashena/web-admin run dev
+    env_file: .env
+    ports:
+      - "3002:3002"
+    volumes:
+      - .:/repo
+      - /repo/node_modules
+      - /repo/apps/web-admin/node_modules
+      - /repo/apps/web-admin/.next
+      - /repo/packages/shared/node_modules
+
+volumes:
+  postgres_data_dev:
+  redis_data_dev:
