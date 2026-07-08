@@ -26,3 +26,8 @@ export {
   parseAgeRangeInput,
   type AgeRangeParseResult,
 } from "./matching.js";
+export {
+  REPORT_REASON_OPTIONS,
+  isReportReasonValue,
+  type ReportReasonValue,
+} from "./moderation.js";

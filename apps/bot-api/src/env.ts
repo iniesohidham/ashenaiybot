@@ -8,6 +8,9 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url("Database URL must be a valid connection string"),
   REDIS_URL: z.string().url("Redis URL must be a valid connection string"),
   MINIAPP_PUBLIC_URL: z.string().url("Mini App public URL must be a valid URL"),
+  // US-4.7: how long a ChatSession can sit with no activity before the
+  // worker auto-ends it.
+  IDLE_SESSION_TIMEOUT_HOURS: z.coerce.number().positive().default(24),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -1,5 +1,12 @@
 import type { MatchPreference, Profile, User } from "@ashena/db";
-import { BIO_MAX_LENGTH, GENDER_OPTIONS, INTEREST_OPTIONS, MAX_INTERESTS } from "@ashena/shared";
+import {
+  BIO_MAX_LENGTH,
+  GENDER_OPTIONS,
+  INTEREST_OPTIONS,
+  MAX_INTERESTS,
+  REPORT_REASON_OPTIONS,
+  type ReportReasonValue,
+} from "@ashena/shared";
 
 // Persian UX copy for EPIC 2 (bot onboarding & profile). Follows PRD §8:
 // CTAs start with a verb, errors state what+why+how-to-fix, sensitive
@@ -155,7 +162,6 @@ export const SWIPE_CARD_EXPIRED_MESSAGE =
 
 export const MATCH_FOUND_MESSAGE = "Match پیدا شد! 🎉 یه هم‌صحبت جدید داری.";
 export const MATCH_START_CHAT_LABEL = "شروع گفتگو";
-export const CHAT_START_PLACEHOLDER_MESSAGE = "شروع گفتگو هنوز آماده نیست — به‌زودی اضافه می‌شه.";
 
 export const SETTINGS_MENU_MESSAGE = "چی رو می‌خوای تنظیم کنی؟";
 export const SETTINGS_EDIT_GENDERS_LABEL = "جنسیت مورد علاقه";
@@ -195,4 +201,63 @@ export function formatPreferenceSummary(
     `جنسیت مورد علاقه: ${gendersLabel}`,
     `محدوده سنی: ${preference.minAge} تا ${preference.maxAge}`,
   ].join("\n");
+}
+
+// EPIC 4 (US-4.1..4.7) chat relay copy + minimal EPIC 5 (US-5.1, US-5.4)
+// safety copy. Per PRD §8: the counterpart is always "هم‌صحبت"; endings
+// caused by a moderation action (report/ban) use the same neutral copy as a
+// plain end-chat, never revealing that a moderation action happened.
+
+export const CHAT_TOOLBAR_END_LABEL = "پایان گفتگو";
+export const CHAT_TOOLBAR_REPORT_LABEL = "گزارش";
+export const CHAT_TOOLBAR_BLOCK_LABEL = "بلاک";
+
+export const CHAT_STARTED_MESSAGE =
+  "گفتگو شروع شد! هر چی از حالا بفرستی برای هم‌صحبتت ارسال می‌شه. هر وقت خواستی، از دکمه‌های پایین می‌تونی گفتگو رو تموم کنی، گزارش بدی یا بلاکش کنی.";
+
+export const CHAT_RESUMED_MESSAGE = "به گفتگو برگشتی. می‌تونی ادامه بدی.";
+
+export const MESSAGE_BLOCKED_MESSAGE =
+  "این پیام با قوانین آشنایی مطابقت نداره و ارسال نشد. لطفاً به‌شکل دیگه‌ای بنویسش.";
+
+export const CHAT_PARTNER_LEFT_MESSAGE = "هم‌صحبتت از گفتگو خارج شد.";
+export const CHAT_ENDED_BY_YOU_MESSAGE = "گفتگو تموم شد.";
+export const CHAT_ALREADY_ENDED_MESSAGE =
+  "این گفتگو قبلاً تموم شده. برای پیدا کردن هم‌صحبت جدید از دکمه پایین استفاده کن.";
+
+export const FIND_NEXT_LABEL = "پیدا کردن هم‌صحبت بعدی";
+export const CHAT_ENDED_NEXT_PROMPT = "می‌خوای هم‌صحبت بعدی رو پیدا کنی؟";
+
+export const UNSUPPORTED_MESSAGE_TYPE_MESSAGE = "این نوع پیام پشتیبانی نمی‌شه.";
+
+export const IDLE_TIMEOUT_MESSAGE = "گفتگو به‌خاطر عدم فعالیت طولانی‌مدت به‌طور خودکار تموم شد.";
+
+export const REPORT_REASON_PROMPT =
+  "چرا می‌خوای این هم‌صحبت رو گزارش کنی؟ با ثبت گزارش، گفتگوی فعلی برای هر دو طرف تموم می‌شه.";
+export const REPORT_CANCEL_LABEL = "انصراف";
+export const REPORT_SUBMITTED_MESSAGE =
+  "گزارشت ثبت شد و توسط تیم ما بررسی می‌شه. گفتگو برای هر دو طرف تموم شد.";
+export const REPORT_CANCELLED_MESSAGE = "گزارش لغو شد.";
+
+const REPORT_REASON_LABELS: Record<string, string> = Object.fromEntries(
+  REPORT_REASON_OPTIONS.map((option) => [option.value, option.labelFa]),
+);
+
+export function reportReasonLabel(reason: ReportReasonValue): string {
+  return REPORT_REASON_LABELS[reason] ?? reason;
+}
+
+export const BLOCK_CONFIRM_PROMPT =
+  "اگه این هم‌صحبت رو بلاک کنی، گفتگوی فعلی تموم می‌شه و این کاربر دیگه هیچ‌وقت (حتی بعد از این گفتگو) به عنوان هم‌صحبت بهت پیشنهاد داده نمی‌شه. مطمئنی؟";
+export const BLOCK_CONFIRM_YES_LABEL = "بله، بلاکش کن";
+export const BLOCK_CONFIRM_NO_LABEL = "نه، منصرف شدم";
+export const BLOCK_DONE_MESSAGE = "بلاک شد. گفتگو تموم شد.";
+export const BLOCK_CANCELLED_MESSAGE = "بلاک لغو شد.";
+
+export const BAN_PERMANENT_MESSAGE =
+  "حسابت به‌طور دائم مسدود شده و امکان استفاده از آشنایی رو نداری.";
+
+export function banTemporaryMessage(expiresAt: Date): string {
+  const formatted = expiresAt.toISOString().slice(0, 10);
+  return `حسابت به‌طور موقت مسدود شده و تا ${formatted} امکان استفاده از آشنایی رو نداری.`;
 }

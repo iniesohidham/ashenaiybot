@@ -17,7 +17,6 @@ import type { BotContext } from "./context.js";
 import type { AwaitingInputStore } from "./awaitingInput.js";
 import { sendMainMenu } from "./onboarding.js";
 import {
-  CHAT_START_PLACEHOLDER_MESSAGE,
   FIND_MATCH_EMPTY_MESSAGE,
   MATCH_FOUND_MESSAGE,
   PREF_AGE_RANGE_INVALID_FORMAT_MESSAGE,
@@ -44,7 +43,6 @@ import {
   getSelectedGenderPreferences,
   mainMenuKeyboard,
   matchFoundKeyboard,
-  matchIdFromStartCallback,
   prefCancelKeyboard,
   setsAreEqual,
   settingsMenuKeyboard,
@@ -263,12 +261,6 @@ export function registerMatchingHandlers(bot: Bot<BotContext>, deps: MatchingDep
       awaitingInput.clear(userId);
       await ctx.answerCallbackQuery();
       await sendSettingsMenu(ctx);
-      return;
-    }
-
-    if (matchIdFromStartCallback(data)) {
-      await ctx.answerCallbackQuery();
-      await ctx.reply(CHAT_START_PLACEHOLDER_MESSAGE);
       return;
     }
 

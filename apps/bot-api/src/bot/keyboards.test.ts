@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MAX_INTERESTS } from "@ashena/shared";
 import {
+  blockConfirmSessionId,
   candidateSwipeId,
   genderPreferenceKeyboard,
   genderPreferenceToggleValue,
@@ -8,6 +9,7 @@ import {
   getSelectedInterests,
   interestsKeyboard,
   matchIdFromStartCallback,
+  reportReasonFromCallback,
   setsAreEqual,
   toggleGenderPreference,
   toggleInterest,
@@ -134,6 +136,40 @@ describe("matchIdFromStartCallback", () => {
 
   it("returns null for unrelated data", () => {
     expect(matchIdFromStartCallback("menu:find")).toBeNull();
+  });
+});
+
+describe("reportReasonFromCallback", () => {
+  it("parses a report:reason callback", () => {
+    expect(reportReasonFromCallback("report:reason:spam:session-1")).toEqual({
+      reason: "spam",
+      sessionId: "session-1",
+    });
+  });
+
+  it("supports a sessionId that itself contains colons", () => {
+    expect(reportReasonFromCallback("report:reason:harassment:a:b:c")).toEqual({
+      reason: "harassment",
+      sessionId: "a:b:c",
+    });
+  });
+
+  it("returns null for an invalid reason", () => {
+    expect(reportReasonFromCallback("report:reason:bogus:session-1")).toBeNull();
+  });
+
+  it("returns null for unrelated data", () => {
+    expect(reportReasonFromCallback("menu:find")).toBeNull();
+  });
+});
+
+describe("blockConfirmSessionId", () => {
+  it("parses a block:confirm callback", () => {
+    expect(blockConfirmSessionId("block:confirm:session-1")).toBe("session-1");
+  });
+
+  it("returns null for unrelated data", () => {
+    expect(blockConfirmSessionId("block:cancel")).toBeNull();
   });
 });
 

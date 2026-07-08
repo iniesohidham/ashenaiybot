@@ -207,9 +207,12 @@ model Message {
 }
 
 model Report {
-  id             String         @id @default(cuid())
-  reporterId     String
-  reporter       User           @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  id         String @id @default(cuid())
+  // Nullable: a null reporter means this Report was auto-created by the
+  // keyword filter (US-5.1's "auto-flagged for moderator review"), not
+  // submitted by a user (US-4.5's report flow always sets this).
+  reporterId String?
+  reporter   User?  @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
   reportedUserId String
   reportedUser   User           @relation("ReportReported", fields: [reportedUserId], references: [id], onDelete: Cascade)
   sessionId      String?
@@ -241,6 +244,16 @@ model AdminUser {
   createdAt    DateTime  @default(now())
 
   issuedBans BanRecord[]
+}
+
+// EPIC 5 (US-5.1, minimal slice) — banned-word/pattern list, editable without a
+// code deploy. Literal case-insensitive substring matching only for v1 (no
+// regex engine exposed) — see modules/moderation/service.ts.
+model BannedPattern {
+  id        String         @id @default(cuid())
+  pattern   String
+  severity  ReportSeverity @default(normal)
+  createdAt DateTime       @default(now())
 }
 
 model BanRecord {

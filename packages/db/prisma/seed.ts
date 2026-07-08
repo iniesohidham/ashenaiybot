@@ -115,6 +115,64 @@ async function seedMatches(users: User[]): Promise<void> {
   }
 }
 
+/**
+ * EPIC 7 (Admin Panel) owns real admin auth/login — this row exists purely so
+ * BanRecord.issuedByAdminId has a valid FK to seed/test against before then.
+ * The passwordHash is an obvious, unusable placeholder, not a real credential.
+ */
+async function seedSystemAdmin(): Promise<void> {
+  await prisma.adminUser.upsert({
+    where: { username: "system" },
+    update: {},
+    create: {
+      username: "system",
+      passwordHash: "epic7-not-yet-implemented",
+      role: "admin",
+    },
+  });
+}
+
+/**
+ * EPIC 5 (US-5.1, minimal slice) — a small illustrative starting point for
+ * the DB-backed banned-word list, not an attempt at a real profanity list.
+ * Editable via the Admin Panel once EPIC 7 ships.
+ */
+async function seedBannedPatterns(): Promise<void> {
+  const starterPatterns: Array<{ pattern: string; severity: "normal" | "high" }> = [
+    { pattern: "spamword", severity: "normal" },
+    { pattern: "badword", severity: "normal" },
+    { pattern: "زیر ۱۸", severity: "high" },
+  ];
+  for (const { pattern, severity } of starterPatterns) {
+    const existing = await prisma.bannedPattern.findFirst({ where: { pattern } });
+    if (existing) continue;
+    await prisma.bannedPattern.create({ data: { pattern, severity } });
+  }
+}
+
+/**
+ * Gives one of the 3 "active" seeded matches a live ChatSession with a couple
+ * of messages, so manual live-bot testing (EPIC 4) has a session to resume/
+ * end/report/block against immediately after seeding, without needing to
+ * swipe through the matching flow first.
+ */
+async function seedChatSession(users: User[]): Promise<void> {
+  const [userA, userB] = canonicalUserPair(users[0].id, users[1].id);
+  const match = await prisma.match.findUnique({ where: { userAId_userBId: { userAId: userA, userBId: userB } } });
+  if (!match) return;
+
+  const existing = await prisma.chatSession.findFirst({ where: { matchId: match.id } });
+  if (existing) return;
+
+  const session = await prisma.chatSession.create({ data: { matchId: match.id } });
+  await prisma.message.createMany({
+    data: [
+      { sessionId: session.id, senderUserId: userA, type: "text", contentRef: "سلام! چطوری؟" },
+      { sessionId: session.id, senderUserId: userB, type: "text", contentRef: "سلام، خوبم! تو چطوری؟" },
+    ],
+  });
+}
+
 async function seedReports(users: User[]): Promise<void> {
   const reporter = users[10];
   const reported = users[11];
@@ -140,7 +198,13 @@ async function main(): Promise<void> {
   await seedMatchPreferences(users);
   await seedMatches(users);
   await seedReports(users);
-  console.log(`Seeded ${users.length} users, 5 matches (3 active/2 ended), 1 pending report.`);
+  await seedSystemAdmin();
+  await seedBannedPatterns();
+  await seedChatSession(users);
+  console.log(
+    `Seeded ${users.length} users, 5 matches (3 active/2 ended), 1 pending report, ` +
+      `1 system admin, 3 banned patterns, 1 active chat session with 2 messages.`,
+  );
 }
 
 main()
