@@ -1,7 +1,7 @@
 import { faker } from "@faker-js/faker";
-import { Gender, PrismaClient, type User } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { Gender, type User } from "@prisma/client";
+import { calculateAge, defaultAgeRange, defaultInterestedInGenders, type GenderValue } from "@ashena/shared";
+import { canonicalUserPair, prisma } from "../src/index.js";
 
 const INTERESTS = [
   "music",
@@ -65,9 +65,25 @@ async function seedUsers(count: number): Promise<User[]> {
   return users;
 }
 
-/** Match.userAId/userBId must be a canonical (sorted) pair — see schema.prisma. */
-function canonicalPair(idA: string, idB: string): [string, string] {
-  return idA < idB ? [idA, idB] : [idB, idA];
+/**
+ * Separate upsert (rather than nested in seedUsers' create) so re-running
+ * this script backfills MatchPreference for users seeded before EPIC 3 too —
+ * a nested `create` only fires on the user's own first insert.
+ */
+async function seedMatchPreferences(users: User[]): Promise<void> {
+  for (const user of users) {
+    if (!user.gender || !user.birthDate) continue;
+    const age = calculateAge(user.birthDate);
+    await prisma.matchPreference.upsert({
+      where: { userId: user.id },
+      update: {},
+      create: {
+        userId: user.id,
+        interestedInGenders: defaultInterestedInGenders(user.gender as GenderValue),
+        ...defaultAgeRange(age),
+      },
+    });
+  }
 }
 
 async function seedMatches(users: User[]): Promise<void> {
@@ -77,7 +93,7 @@ async function seedMatches(users: User[]): Promise<void> {
     [users[4], users[5]],
   ];
   for (const [userA, userB] of activePairs) {
-    const [a, b] = canonicalPair(userA.id, userB.id);
+    const [a, b] = canonicalUserPair(userA.id, userB.id);
     await prisma.match.upsert({
       where: { userAId_userBId: { userAId: a, userBId: b } },
       update: {},
@@ -90,7 +106,7 @@ async function seedMatches(users: User[]): Promise<void> {
     [users[8], users[9]],
   ];
   for (const [userA, userB] of endedPairs) {
-    const [a, b] = canonicalPair(userA.id, userB.id);
+    const [a, b] = canonicalUserPair(userA.id, userB.id);
     await prisma.match.upsert({
       where: { userAId_userBId: { userAId: a, userBId: b } },
       update: {},
@@ -121,6 +137,7 @@ async function seedReports(users: User[]): Promise<void> {
 
 async function main(): Promise<void> {
   const users = await seedUsers(20);
+  await seedMatchPreferences(users);
   await seedMatches(users);
   await seedReports(users);
   console.log(`Seeded ${users.length} users, 5 matches (3 active/2 ended), 1 pending report.`);

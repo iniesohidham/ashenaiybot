@@ -17,7 +17,9 @@
 // "interests" carries no free-text/photo expectation of its own (that step is
 // callback-only) — it's tracked here purely so the int:done/int:skip
 // handlers know whether they're mid-onboarding-chain or a standalone edit.
-export type AwaitingField = "birth_date" | "bio" | "photo" | "interests";
+// "age_range" (EPIC 3, US-3.1) is edit-only — match preferences aren't part
+// of required onboarding, so it never needs an onboarding-chain distinction.
+export type AwaitingField = "birth_date" | "bio" | "photo" | "interests" | "age_range";
 export type AwaitingMode = "onboarding" | "edit";
 
 export interface AwaitingInput {

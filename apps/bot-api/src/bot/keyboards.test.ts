@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { MAX_INTERESTS } from "@ashena/shared";
-import { getSelectedInterests, interestsKeyboard, setsAreEqual, toggleInterest } from "./keyboards.js";
+import {
+  candidateSwipeId,
+  genderPreferenceKeyboard,
+  genderPreferenceToggleValue,
+  getSelectedGenderPreferences,
+  getSelectedInterests,
+  interestsKeyboard,
+  matchIdFromStartCallback,
+  setsAreEqual,
+  toggleGenderPreference,
+  toggleInterest,
+} from "./keyboards.js";
 
 describe("interestsKeyboard / getSelectedInterests round-trip", () => {
   it("round-trips an empty selection", () => {
@@ -59,5 +70,87 @@ describe("setsAreEqual", () => {
 
   it("is false for same-size sets with different values", () => {
     expect(setsAreEqual(new Set(["a"]), new Set(["b"]))).toBe(false);
+  });
+});
+
+describe("genderPreferenceKeyboard / getSelectedGenderPreferences round-trip", () => {
+  it("round-trips a single selection", () => {
+    const keyboard = genderPreferenceKeyboard(new Set(["male"]));
+    expect(getSelectedGenderPreferences(keyboard.inline_keyboard)).toEqual(["male"]);
+  });
+
+  it("round-trips multiple selections", () => {
+    const keyboard = genderPreferenceKeyboard(new Set(["male", "other"]));
+    expect(getSelectedGenderPreferences(keyboard.inline_keyboard).sort()).toEqual(["male", "other"]);
+  });
+
+  it("returns an empty list for undefined rows", () => {
+    expect(getSelectedGenderPreferences(undefined)).toEqual([]);
+  });
+});
+
+describe("toggleGenderPreference", () => {
+  it("adds a value that isn't selected yet", () => {
+    const result = toggleGenderPreference(new Set(["male"]), "female");
+    expect(result.has("female")).toBe(true);
+  });
+
+  it("removes a value that is already selected, above the floor", () => {
+    const result = toggleGenderPreference(new Set(["male", "female"]), "female");
+    expect(result.has("female")).toBe(false);
+  });
+
+  it("refuses to drop the last remaining selection", () => {
+    const result = toggleGenderPreference(new Set(["male"]), "male");
+    expect(result.has("male")).toBe(true);
+    expect(result.size).toBe(1);
+  });
+
+  it("returns an unchanged set (by value) when rejecting the last selection", () => {
+    const atFloor = new Set<"male" | "female" | "other">(["other"]);
+    const result = toggleGenderPreference(atFloor, "other");
+    expect(setsAreEqual(result, atFloor)).toBe(true);
+  });
+});
+
+describe("candidateSwipeId", () => {
+  it("parses a like callback", () => {
+    expect(candidateSwipeId("swipe:like:abc123")).toEqual({ candidateId: "abc123", isLike: true });
+  });
+
+  it("parses a pass callback", () => {
+    expect(candidateSwipeId("swipe:pass:abc123")).toEqual({ candidateId: "abc123", isLike: false });
+  });
+
+  it("returns null for unrelated data", () => {
+    expect(candidateSwipeId("menu:find")).toBeNull();
+  });
+});
+
+describe("matchIdFromStartCallback", () => {
+  it("parses a match:start callback", () => {
+    expect(matchIdFromStartCallback("match:start:xyz789")).toBe("xyz789");
+  });
+
+  it("returns null for unrelated data", () => {
+    expect(matchIdFromStartCallback("menu:find")).toBeNull();
+  });
+});
+
+describe("genderPreferenceToggleValue", () => {
+  it("parses a valid gender toggle", () => {
+    expect(genderPreferenceToggleValue("pref:gender:t:male")).toBe("male");
+  });
+
+  it("returns null for the done callback (not a toggle)", () => {
+    expect(genderPreferenceToggleValue("pref:gender:done")).toBeNull();
+  });
+
+  it("returns null for an invalid gender value", () => {
+    expect(genderPreferenceToggleValue("pref:gender:t:bogus")).toBeNull();
+  });
+
+  it("returns null for unrelated data", () => {
+    expect(genderPreferenceToggleValue("menu:find")).toBeNull();
   });
 });

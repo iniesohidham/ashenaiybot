@@ -1,4 +1,4 @@
-import type { Profile, User } from "@ashena/db";
+import type { MatchPreference, Profile, User } from "@ashena/db";
 import { BIO_MAX_LENGTH, GENDER_OPTIONS, INTEREST_OPTIONS, MAX_INTERESTS } from "@ashena/shared";
 
 // Persian UX copy for EPIC 2 (bot onboarding & profile). Follows PRD §8:
@@ -86,11 +86,6 @@ export const MAIN_MENU_SETTINGS_LABEL = "تنظیمات";
 
 export const MAIN_MENU_MESSAGE = "چیکار می‌خوای بکنی؟";
 
-export const FIND_MATCH_PLACEHOLDER_MESSAGE =
-  "پیدا کردن هم‌صحبت هنوز آماده نیست — این قابلیت به‌زودی اضافه می‌شه. فعلاً می‌تونی پروفایلت رو کامل‌تر کنی.";
-
-export const SETTINGS_PLACEHOLDER_MESSAGE = "تنظیمات هنوز آماده نیست، به‌زودی اضافه می‌شه.";
-
 export const EDIT_MENU_MESSAGE = "کدوم بخش از پروفایلت رو می‌خوای ویرایش کنی؟";
 export const EDIT_MENU_GENDER_LABEL = "جنسیت";
 export const EDIT_MENU_BIRTH_DATE_LABEL = "تاریخ تولد";
@@ -142,5 +137,62 @@ export function formatProfileSummary(
     `بیو: ${bioLabel}`,
     `علاقه‌مندی‌ها: ${interestsLabel}`,
     `عکس: ${photoLabel}`,
+  ].join("\n");
+}
+
+// EPIC 3 (US-3.1..3.6) matching-engine copy.
+
+export const SWIPE_LIKE_LABEL = "لایک ❤️";
+export const SWIPE_PASS_LABEL = "رد کردن ✖️";
+
+export const FIND_MATCH_EMPTY_MESSAGE =
+  "فعلاً هم‌صحبت مناسبی برات پیدا نکردیم. یکم بعد دوباره سر بزن.";
+
+export const SWIPE_RATE_LIMITED_MESSAGE = "یکم تند رفتی! چند لحظه صبر کن و دوباره امتحان کن.";
+
+export const SWIPE_CARD_EXPIRED_MESSAGE =
+  "این کارت دیگه معتبر نیست. برای دیدن هم‌صحبت بعدی، دوباره روی «پیدا کردن هم‌صحبت» بزن.";
+
+export const MATCH_FOUND_MESSAGE = "Match پیدا شد! 🎉 یه هم‌صحبت جدید داری.";
+export const MATCH_START_CHAT_LABEL = "شروع گفتگو";
+export const CHAT_START_PLACEHOLDER_MESSAGE = "شروع گفتگو هنوز آماده نیست — به‌زودی اضافه می‌شه.";
+
+export const SETTINGS_MENU_MESSAGE = "چی رو می‌خوای تنظیم کنی؟";
+export const SETTINGS_EDIT_GENDERS_LABEL = "جنسیت مورد علاقه";
+export const SETTINGS_EDIT_AGE_RANGE_LABEL = "محدوده سنی";
+export const SETTINGS_BACK_LABEL = "بازگشت به منو";
+
+export const PREF_GENDER_PROMPT = "دنبال چه جنسیتی می‌گردی؟ (حداقل یکی رو انتخاب کن)";
+export const PREF_GENDER_DONE_LABEL = "تمومه";
+export const PREF_GENDER_MIN_REQUIRED_MESSAGE = "باید حداقل یک جنسیت انتخاب‌شده باقی بمونه.";
+export const PREF_GENDER_SAVED_MESSAGE = "جنسیت مورد علاقه‌ات ذخیره شد ✅";
+
+export const PREF_AGE_RANGE_PROMPT_EXAMPLE = "25-35";
+export const PREF_AGE_RANGE_PROMPT = `محدوده سنی مورد نظرت رو به شکل حداقل-حداکثر بفرست، مثلاً: ${PREF_AGE_RANGE_PROMPT_EXAMPLE}`;
+export const PREF_AGE_RANGE_INVALID_FORMAT_MESSAGE = `این فرمت رو نفهمیدم. لطفاً به شکل حداقل-حداکثر بفرست، مثلاً: ${PREF_AGE_RANGE_PROMPT_EXAMPLE}`;
+export const PREF_AGE_RANGE_OUT_OF_BOUNDS_MESSAGE = "سن باید بین ۱۸ تا ۹۹ باشه. لطفاً دوباره بفرست.";
+export const PREF_AGE_RANGE_MIN_AFTER_MAX_MESSAGE =
+  "حداقل سن نمی‌تونه از حداکثر بیشتر باشه. لطفاً دوباره بفرست.";
+export const PREF_AGE_RANGE_SAVED_MESSAGE = "محدوده سنی‌ات ذخیره شد ✅";
+
+export function formatCandidateCard(
+  profile: Pick<Profile, "displayBio" | "interests"> | null,
+): string {
+  const bioLabel = profile?.displayBio?.trim() ? profile.displayBio : "بیو ندارد";
+  const interestsLabel = profile?.interests?.length
+    ? profile.interests.map((value) => INTEREST_LABELS[value] ?? value).join("، ")
+    : "علاقه‌مندی‌ای ثبت نشده";
+  return [bioLabel, "", `علاقه‌مندی‌ها: ${interestsLabel}`].join("\n");
+}
+
+export function formatPreferenceSummary(
+  preference: Pick<MatchPreference, "interestedInGenders" | "minAge" | "maxAge">,
+): string {
+  const gendersLabel = preference.interestedInGenders
+    .map((value) => GENDER_LABELS[value] ?? value)
+    .join("، ");
+  return [
+    `جنسیت مورد علاقه: ${gendersLabel}`,
+    `محدوده سنی: ${preference.minAge} تا ${preference.maxAge}`,
   ].join("\n");
 }

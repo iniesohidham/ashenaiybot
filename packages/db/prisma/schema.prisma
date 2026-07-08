@@ -97,6 +97,7 @@ model User {
   createdAt     DateTime   @default(now())
 
   profile Profile?
+  matchPreference MatchPreference?
 
   swipesMade     SwipeAction[] @relation("SwipeActor")
   swipesReceived SwipeAction[] @relation("SwipeTarget")
@@ -126,6 +127,18 @@ model Profile {
   interests             String[]         @default([])
   photoUrl              String?
   photoModerationStatus ModerationStatus @default(pending)
+}
+
+// EPIC 3 (US-3.1) — who a user wants to see in their candidate queue. Lazily
+// created with sensible defaults (see matching service) the first time it's
+// needed, not eagerly at onboarding, so pre-EPIC-3 users backfill naturally.
+model MatchPreference {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interestedInGenders Gender[]
+  minAge              Int
+  maxAge              Int
 }
 
 model SwipeAction {

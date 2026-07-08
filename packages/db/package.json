@@ -20,6 +20,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@ashena/shared": "workspace:*",
     "@prisma/client": "^5.22.0"
   },
   "devDependencies": {

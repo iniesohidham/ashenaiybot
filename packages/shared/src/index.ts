@@ -10,7 +10,19 @@ export {
   INTEREST_VALUES,
   calculateAge,
   isAdult,
+  isGenderValue,
+  normalizeDigits,
   parseBirthDateInput,
   type GenderValue,
   type BirthDateParseResult,
 } from "./onboarding.js";
+export {
+  DEFAULT_AGE_RANGE_SPREAD,
+  MAX_PREFERENCE_AGE,
+  SWIPE_RATE_LIMIT_PER_MINUTE,
+  birthDateBoundsForAgeRange,
+  defaultAgeRange,
+  defaultInterestedInGenders,
+  parseAgeRangeInput,
+  type AgeRangeParseResult,
+} from "./matching.js";

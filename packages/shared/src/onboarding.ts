@@ -20,6 +20,12 @@ export const GENDER_OPTIONS: ReadonlyArray<{ value: GenderValue; labelFa: string
   { value: "other", labelFa: "دیگر" },
 ];
 
+const GENDER_VALUES = new Set<string>(["male", "female", "other"]);
+
+export function isGenderValue(value: string): value is GenderValue {
+  return GENDER_VALUES.has(value);
+}
+
 export const INTEREST_OPTIONS: ReadonlyArray<{ value: string; labelFa: string }> = [
   { value: "music", labelFa: "موسیقی" },
   { value: "movies", labelFa: "فیلم و سریال" },
@@ -61,7 +67,7 @@ const ARABIC_INDIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
 // Iranian users' keyboards commonly default to Persian digits, so a
 // bare-ASCII regex would reject perfectly valid input from most of this
 // product's actual audience.
-function normalizeDigits(input: string): string {
+export function normalizeDigits(input: string): string {
   return input.replace(/[۰-۹٠-٩]/g, (char) => {
     const persianIndex = PERSIAN_DIGITS.indexOf(char);
     if (persianIndex !== -1) return String(persianIndex);

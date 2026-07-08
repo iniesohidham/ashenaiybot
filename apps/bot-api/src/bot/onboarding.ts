@@ -1,8 +1,8 @@
 import type { Bot } from "grammy";
-import type { InlineKeyboardButton } from "grammy/types";
-import { BIO_MAX_LENGTH, isAdult, parseBirthDateInput, type GenderValue } from "@ashena/shared";
+import { BIO_MAX_LENGTH, isAdult, isGenderValue, parseBirthDateInput } from "@ashena/shared";
 import { findProfileByUserId, upsertProfile } from "../modules/profiles/service.js";
 import { deriveOnboardingStep, updateUser } from "../modules/users/service.js";
+import { getOrCreatePreference } from "../modules/matching/service.js";
 import type { BotContext } from "./context.js";
 import type { AwaitingInputStore, AwaitingMode } from "./awaitingInput.js";
 import {
@@ -20,7 +20,6 @@ import {
   BIRTH_DATE_UNDERAGE_EDIT_MESSAGE,
   BIRTH_DATE_UNDERAGE_ONBOARDING_MESSAGE,
   EDIT_MENU_MESSAGE,
-  FIND_MATCH_PLACEHOLDER_MESSAGE,
   GENDER_PROMPT,
   GENDER_SAVED_MESSAGE,
   INTERESTS_CAP_REACHED_MESSAGE,
@@ -35,7 +34,6 @@ import {
   PHOTO_PROMPT,
   PHOTO_SAVED_PENDING_MESSAGE,
   RESUME_NUDGE_MESSAGE,
-  SETTINGS_PLACEHOLDER_MESSAGE,
   WELCOME_MESSAGE,
   bioTooLongMessage,
   formatProfileSummary,
@@ -48,6 +46,7 @@ import {
   editMenuKeyboard,
   genderEditKeyboard,
   genderKeyboard,
+  getMessageInlineKeyboard,
   getSelectedInterests,
   interestsKeyboard,
   mainMenuKeyboard,
@@ -63,16 +62,15 @@ export interface OnboardingDeps {
   miniAppUrl: string;
 }
 
-const GENDER_VALUES = new Set<GenderValue>(["male", "female", "other"]);
-
-function isGenderValue(value: string): value is GenderValue {
-  return GENDER_VALUES.has(value as GenderValue);
-}
-
-function getMessageInlineKeyboard(ctx: BotContext): InlineKeyboardButton[][] | undefined {
-  const message = ctx.callbackQuery?.message;
-  if (!message || !("reply_markup" in message)) return undefined;
-  return message.reply_markup?.inline_keyboard;
+/**
+ * Also ensures a default MatchPreference exists (EPIC 3, US-3.1) — this is
+ * the one choke point every "onboarding complete" path (fresh completion,
+ * /start, /menu, editBack) already runs through, so it doubles as a lazy
+ * backfill for users who onboarded before EPIC 3 shipped.
+ */
+export async function sendMainMenu(ctx: BotContext): Promise<void> {
+  await getOrCreatePreference(ctx.internalUser);
+  await ctx.reply(MAIN_MENU_MESSAGE, { reply_markup: mainMenuKeyboard() });
 }
 
 /**
@@ -86,10 +84,6 @@ function getMessageInlineKeyboard(ctx: BotContext): InlineKeyboardButton[][] | u
  */
 export function registerOnboardingHandlers(bot: Bot<BotContext>, deps: OnboardingDeps): void {
   const { awaitingInput, miniAppUrl } = deps;
-
-  async function sendMainMenu(ctx: BotContext): Promise<void> {
-    await ctx.reply(MAIN_MENU_MESSAGE, { reply_markup: mainMenuKeyboard() });
-  }
 
   /** Resumes at whichever required step is next; used by /start, /menu, and stale-tap recovery. */
   async function sendCurrentStepPrompt(ctx: BotContext): Promise<void> {
@@ -162,6 +156,14 @@ export function registerOnboardingHandlers(bot: Bot<BotContext>, deps: Onboardin
     ctx.internalUser = updated;
     awaitingInput.clear(userId);
     if (mode === "onboarding") {
+      // birth_date is the last required step (deriveOnboardingStep is now
+      // "complete") — create the default MatchPreference right here rather
+      // than waiting for sendMainMenu, which isn't reached until the
+      // optional bio/interests/photo chain finishes. Without this, EPIC 3's
+      // candidate query (which requires a MatchPreference row to exist)
+      // would silently exclude this user from everyone else's search during
+      // that window.
+      await getOrCreatePreference(updated);
       await startOptionalBioStep(ctx);
     } else {
       await ctx.reply(BIRTH_DATE_SAVED_MESSAGE);
@@ -196,6 +198,9 @@ export function registerOnboardingHandlers(bot: Bot<BotContext>, deps: Onboardin
     }
     if (step === "age_gate") {
       await ctx.reply(WELCOME_MESSAGE, { reply_markup: onboardingBeginKeyboard() });
+      // miniAppKeyboard degrades to a plain URL button when miniAppUrl isn't
+      // HTTPS yet (Telegram rejects non-HTTPS `web_app` buttons outright) —
+      // see its doc comment in keyboards.ts.
       await ctx.reply(MINI_APP_INTRO_MESSAGE, { reply_markup: miniAppKeyboard(miniAppUrl) });
       return;
     }
@@ -207,7 +212,7 @@ export function registerOnboardingHandlers(bot: Bot<BotContext>, deps: Onboardin
     await sendCurrentStepPrompt(ctx);
   });
 
-  bot.on("callback_query:data", async (ctx) => {
+  bot.on("callback_query:data", async (ctx, next) => {
     const data = ctx.callbackQuery.data;
 
     // Defense in depth: callback_data can in principle be forged/replayed by
@@ -288,8 +293,8 @@ export function registerOnboardingHandlers(bot: Bot<BotContext>, deps: Onboardin
     if (data.startsWith("int:t:")) {
       const value = data.slice("int:t:".length);
       const currentSelected = new Set(getSelectedInterests(getMessageInlineKeyboard(ctx)));
-      const next = toggleInterest(currentSelected, value);
-      if (setsAreEqual(currentSelected, next)) {
+      const nextSelected = toggleInterest(currentSelected, value);
+      if (setsAreEqual(currentSelected, nextSelected)) {
         // toggleInterest no-ops at MAX_INTERESTS — re-rendering an
         // unchanged keyboard would make Telegram reject the edit with
         // "message is not modified", so tell the user why instead.
@@ -297,7 +302,7 @@ export function registerOnboardingHandlers(bot: Bot<BotContext>, deps: Onboardin
         return;
       }
       await ctx.answerCallbackQuery();
-      await ctx.editMessageReplyMarkup({ reply_markup: interestsKeyboard(next) });
+      await ctx.editMessageReplyMarkup({ reply_markup: interestsKeyboard(nextSelected) });
       return;
     }
 
@@ -339,18 +344,6 @@ export function registerOnboardingHandlers(bot: Bot<BotContext>, deps: Onboardin
       awaitingInput.clear(ctx.internalUser.id);
       await ctx.answerCallbackQuery();
       await ctx.reply(EDIT_MENU_MESSAGE, { reply_markup: editMenuKeyboard() });
-      return;
-    }
-
-    if (data === CB.menuFind) {
-      await ctx.answerCallbackQuery();
-      await ctx.reply(FIND_MATCH_PLACEHOLDER_MESSAGE);
-      return;
-    }
-
-    if (data === CB.menuSettings) {
-      await ctx.answerCallbackQuery();
-      await ctx.reply(SETTINGS_PLACEHOLDER_MESSAGE);
       return;
     }
 
@@ -407,10 +400,12 @@ export function registerOnboardingHandlers(bot: Bot<BotContext>, deps: Onboardin
       return;
     }
 
-    await ctx.answerCallbackQuery();
+    // Not handled here — let a later-registered handler (e.g. matching.ts's
+    // menu:find/settings/swipe/preferences callbacks) have a turn.
+    await next();
   });
 
-  bot.on("message:text", async (ctx) => {
+  bot.on("message:text", async (ctx, next) => {
     const text = ctx.message.text;
     if (text.startsWith("/")) return;
 
@@ -435,6 +430,12 @@ export function registerOnboardingHandlers(bot: Bot<BotContext>, deps: Onboardin
 
     if (awaiting?.field === "interests") {
       await ctx.reply(INTERESTS_EXPECTED_MESSAGE);
+      return;
+    }
+
+    if (awaiting?.field === "age_range") {
+      // EPIC 3 (match preferences) territory — matching.ts owns this field.
+      await next();
       return;
     }
 
