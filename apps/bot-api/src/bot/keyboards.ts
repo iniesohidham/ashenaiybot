@@ -159,8 +159,17 @@ export function editMenuKeyboard(): InlineKeyboard {
     .text(EDIT_MENU_BACK_LABEL, CB.editBack);
 }
 
+/**
+ * Telegram rejects `web_app` buttons outright for non-HTTPS URLs (local dev,
+ * or prod before certs are installed — see CLAUDE.md's ssl.conf.disabled
+ * note). Degrade to a plain URL button rather than dropping the Mini App
+ * mention entirely: it won't open as a native Mini App, but it's still a
+ * working link and preserves the discovery path.
+ */
 export function miniAppKeyboard(url: string): InlineKeyboard {
-  return new InlineKeyboard().webApp(MINI_APP_BUTTON_LABEL, url);
+  return url.startsWith("https://")
+    ? new InlineKeyboard().webApp(MINI_APP_BUTTON_LABEL, url)
+    : new InlineKeyboard().url(MINI_APP_BUTTON_LABEL, url);
 }
 
 export function onboardingBeginKeyboard(): InlineKeyboard {
