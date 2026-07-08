@@ -185,8 +185,9 @@ export function persistMessage(
   type: MessageType,
   contentRef: string,
   moderationFlag = false,
+  matchedPatternId: string | null = null,
 ): Promise<Message> {
-  return prisma.message.create({ data: { sessionId, senderUserId, type, contentRef, moderationFlag } });
+  return prisma.message.create({ data: { sessionId, senderUserId, type, contentRef, moderationFlag, matchedPatternId } });
 }
 
 export interface EndSessionResult {

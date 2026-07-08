@@ -1,7 +1,7 @@
 import { Bot } from "grammy";
 import { Redis } from "ioredis";
 import type { BotContext } from "./bot/context.js";
-import { identityMiddleware } from "./bot/identityMiddleware.js";
+import { createIdentityMiddleware } from "./bot/identityMiddleware.js";
 import { createInMemoryAwaitingInputStore } from "./bot/awaitingInput.js";
 import { registerOnboardingHandlers } from "./bot/onboarding.js";
 import { registerMatchingHandlers } from "./bot/matching.js";
@@ -9,7 +9,9 @@ import { registerChatHandlers } from "./bot/chat.js";
 
 /**
  * identityMiddleware (US-1.4) resolves/creates the internal User record for
- * every update (and enforces bans, EPIC 5). registerChatHandlers (EPIC 4) is
+ * every update (and enforces bans + the ban-appeal flow, EPIC 5 US-5.4/5.5 —
+ * it now needs the same awaitingInput store as onboarding.ts/matching.ts, so
+ * that's built before it rather than after). registerChatHandlers (EPIC 4) is
  * registered FIRST — deliberately, not incidentally: it claims an update only
  * when the sender has an active chat session (or the update is one of its
  * own self-contained callback prefixes), deferring everything else via
@@ -25,10 +27,11 @@ import { registerChatHandlers } from "./bot/chat.js";
  */
 export function buildBot(token: string, miniAppUrl: string, redisUrl: string): Bot<BotContext> {
   const bot = new Bot<BotContext>(token);
-  bot.use(identityMiddleware);
 
   const awaitingInput = createInMemoryAwaitingInputStore();
   const redis = new Redis(redisUrl);
+
+  bot.use(createIdentityMiddleware({ awaitingInput }));
 
   registerChatHandlers(bot, { redis });
   registerOnboardingHandlers(bot, { awaitingInput, miniAppUrl });

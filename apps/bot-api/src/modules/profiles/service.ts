@@ -11,10 +11,17 @@ export interface UpsertProfileInput {
   photoModerationStatus?: ModerationStatus;
 }
 
+/**
+ * A new photoUrl always stamps photoSubmittedAt (US-5.2's photo queue
+ * ordering) — done here, the single write path for Profile, rather than at
+ * each caller (onboarding.ts's photo step today; any future Mini App photo
+ * upload tomorrow), so the two surfaces can't drift on this.
+ */
 export function upsertProfile(userId: string, input: UpsertProfileInput): Promise<Profile> {
+  const data = input.photoUrl !== undefined ? { ...input, photoSubmittedAt: new Date() } : input;
   return prisma.profile.upsert({
     where: { userId },
-    update: input,
-    create: { userId, ...input },
+    update: data,
+    create: { userId, ...data },
   });
 }

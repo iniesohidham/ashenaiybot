@@ -19,3 +19,19 @@ const REPORT_REASON_VALUES = new Set<string>(REPORT_REASON_OPTIONS.map((option) 
 export function isReportReasonValue(value: string): value is ReportReasonValue {
   return REPORT_REASON_VALUES.has(value);
 }
+
+// EPIC 5 (US-5.6) — message-level rate limiting & spam detection constants.
+// Mirrors matching.ts's SWIPE_RATE_LIMIT_PER_MINUTE: a plain shared constant
+// rather than a DB-backed/env-configurable value, consistent with how the
+// codebase already treats rate-limit thresholds (only the banned-word LIST
+// itself needs to be DB-backed/deploy-free per US-5.1's AC).
+export const MESSAGE_RATE_LIMIT_PER_MINUTE = 20;
+
+// A sender's identical text content appearing in this many distinct
+// ChatSessions within SPAM_DETECTION_WINDOW_MINUTES flags them for review
+// (US-5.6's AC example: "identical message sent to many different matches").
+export const SPAM_DUPLICATE_SESSION_THRESHOLD = 3;
+export const SPAM_DETECTION_WINDOW_MINUTES = 10;
+
+// EPIC 5 (US-5.5) — ban appeal free-text length cap ("free text, limited length").
+export const BAN_APPEAL_MAX_LENGTH = 500;

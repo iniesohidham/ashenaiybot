@@ -12,7 +12,14 @@ import {
   startOrResumeSession,
   type ActiveSession,
 } from "../modules/chat/service.js";
-import { checkText, fileReport, hasFiledReportForSession, upsertBlock } from "../modules/moderation/service.js";
+import {
+  checkAndConsumeMessageRateLimit,
+  checkSpamPattern,
+  checkText,
+  fileReport,
+  hasFiledReportForSession,
+  upsertBlock,
+} from "../modules/moderation/service.js";
 import type { BotContext } from "./context.js";
 import {
   BLOCK_CANCELLED_MESSAGE,
@@ -28,6 +35,7 @@ import {
   CHAT_TOOLBAR_END_LABEL,
   CHAT_TOOLBAR_REPORT_LABEL,
   MESSAGE_BLOCKED_MESSAGE,
+  RATE_LIMIT_EXCEEDED_MESSAGE,
   REPORT_CANCELLED_MESSAGE,
   REPORT_REASON_PROMPT,
   REPORT_SUBMITTED_MESSAGE,
@@ -92,6 +100,22 @@ async function sendWithRetry(send: () => Promise<unknown>, label: string): Promi
  */
 export function registerChatHandlers(bot: Bot<BotContext>, deps: ChatDeps): void {
   const { redis } = deps;
+
+  /**
+   * EPIC 5 (US-5.6) — per-(session, sender) fixed-window limit, checked
+   * ahead of persisting/relaying any in-chat content (text/photo/voice/
+   * sticker), but after the chat-toolbar label checks in message:text so
+   * tapping "پایان گفتگو"/"گزارش"/"بلاک" never counts against it. Returns
+   * false (and has already replied with the rate-limit copy) when exceeded,
+   * so callers just need `if (!(await ...)) return;`.
+   */
+  async function enforceMessageRateLimit(ctx: BotContext, sessionId: string, userId: string): Promise<boolean> {
+    const withinLimit = await checkAndConsumeMessageRateLimit(redis, sessionId, userId);
+    if (!withinLimit) {
+      await ctx.reply(RATE_LIMIT_EXCEEDED_MESSAGE);
+    }
+    return withinLimit;
+  }
 
   /**
    * Notifies the other party that the session ended, using the same neutral
@@ -293,9 +317,11 @@ export function registerChatHandlers(bot: Bot<BotContext>, deps: ChatDeps): void
       return;
     }
 
+    if (!(await enforceMessageRateLimit(ctx, active.session.id, userId))) return;
+
     const check = await checkText(text);
     if (check.blocked) {
-      await persistMessage(active.session.id, userId, "text", text, true);
+      await persistMessage(active.session.id, userId, "text", text, true, check.patternId ?? null);
       if (check.severity === "high") {
         // The closed ReportReason enum has no generic "system-detected"
         // value — "suspected_minor" is the PRD's own paradigm example of
@@ -308,7 +334,19 @@ export function registerChatHandlers(bot: Bot<BotContext>, deps: ChatDeps): void
       return;
     }
 
+    // Persisted BEFORE the spam-pattern check below so this very message
+    // counts toward its own distinct-session tally — checking first would
+    // mean the message that actually crosses the threshold never gets
+    // counted until a 4th distinct session sends it (off-by-one).
     await persistMessage(active.session.id, userId, "text", text, false);
+
+    // US-5.6's spam-pattern signal: flags for review (auto-files a `spam`
+    // Report) but, unlike the keyword filter above, does NOT block delivery
+    // — the AC only asks that the sender be flagged, not silenced.
+    if (await checkSpamPattern(userId, text)) {
+      await fileReport(null, userId, active.session.id, "spam");
+    }
+
     const other = await findUserById(active.otherUserId);
     if (other) {
       await sendWithRetry(
@@ -326,6 +364,8 @@ export function registerChatHandlers(bot: Bot<BotContext>, deps: ChatDeps): void
       await next();
       return;
     }
+
+    if (!(await enforceMessageRateLimit(ctx, active.session.id, userId))) return;
 
     const sizes = ctx.message.photo;
     const largest = sizes[sizes.length - 1];
@@ -349,6 +389,8 @@ export function registerChatHandlers(bot: Bot<BotContext>, deps: ChatDeps): void
       return;
     }
 
+    if (!(await enforceMessageRateLimit(ctx, active.session.id, userId))) return;
+
     const fileId = ctx.message.voice.file_id;
     await persistMessage(active.session.id, userId, "voice", fileId, false);
     const other = await findUserById(active.otherUserId);
@@ -367,6 +409,8 @@ export function registerChatHandlers(bot: Bot<BotContext>, deps: ChatDeps): void
       await ctx.reply(RESUME_NUDGE_MESSAGE);
       return;
     }
+
+    if (!(await enforceMessageRateLimit(ctx, active.session.id, userId))) return;
 
     const fileId = ctx.message.sticker.file_id;
     await persistMessage(active.session.id, userId, "sticker", fileId, false);

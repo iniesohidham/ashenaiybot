@@ -173,22 +173,97 @@ async function seedChatSession(users: User[]): Promise<void> {
   });
 }
 
-async function seedReports(users: User[]): Promise<void> {
+async function seedReports(users: User[], systemAdminId: string): Promise<void> {
   const reporter = users[10];
   const reported = users[11];
 
   const existing = await prisma.report.findFirst({
     where: { reporterId: reporter.id, reportedUserId: reported.id, reason: "spam" },
   });
-  if (existing) return;
+  if (!existing) {
+    await prisma.report.create({
+      data: {
+        reporterId: reporter.id,
+        reportedUserId: reported.id,
+        reason: "spam",
+        severity: "normal",
+        status: "pending",
+      },
+    });
+  }
 
-  await prisma.report.create({
+  // EPIC 5 (US-5.3) — one already-resolved report, so getReportSlaStats()/
+  // listReportQueue() have non-trivial data to compute against immediately
+  // after seeding, not just the one still-pending report above.
+  const resolvedReporter = users[14];
+  const resolvedReported = users[15];
+  const existingResolved = await prisma.report.findFirst({
+    where: { reporterId: resolvedReporter.id, reportedUserId: resolvedReported.id, reason: "harassment" },
+  });
+  if (!existingResolved) {
+    const createdAt = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    await prisma.report.create({
+      data: {
+        reporterId: resolvedReporter.id,
+        reportedUserId: resolvedReported.id,
+        reason: "harassment",
+        severity: "normal",
+        status: "actioned",
+        createdAt,
+        resolvedAt: new Date(),
+        resolvedByAdminId: systemAdminId,
+        resolutionAction: "warn",
+      },
+    });
+  }
+}
+
+/**
+ * EPIC 5 (US-5.2) — one profile with a photo still awaiting review, so
+ * listPendingPhotos() has data immediately after seeding (there's no
+ * automated classifier — see modules/moderation/service.ts — every uploaded
+ * photo lands here until a moderator decision).
+ */
+async function seedPendingPhoto(users: User[]): Promise<void> {
+  const user = users[12];
+  await prisma.profile.update({
+    where: { userId: user.id },
     data: {
-      reporterId: reporter.id,
-      reportedUserId: reported.id,
-      reason: "spam",
-      severity: "normal",
-      status: "pending",
+      photoUrl: "seed-placeholder-file-id",
+      photoModerationStatus: "pending",
+      photoSubmittedAt: new Date(),
+    },
+  });
+}
+
+/**
+ * EPIC 5 (US-5.4/5.5) — one banned user with a pending appeal, so
+ * listPendingBanAppeals() has data immediately after seeding.
+ */
+async function seedBanAppeal(users: User[], systemAdminId: string): Promise<void> {
+  const user = users[13];
+  if (user.status !== "banned") {
+    await prisma.user.update({ where: { id: user.id }, data: { status: "banned" } });
+  }
+  const banRecord = await prisma.banRecord.upsert({
+    where: { id: `seed-ban-${user.id}` },
+    update: {},
+    create: {
+      id: `seed-ban-${user.id}`,
+      userId: user.id,
+      reason: "seed: illustrative temporary ban",
+      type: "temporary",
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      issuedByAdminId: systemAdminId,
+    },
+  });
+  await prisma.banAppeal.upsert({
+    where: { banRecordId: banRecord.id },
+    update: {},
+    create: {
+      banRecordId: banRecord.id,
+      userId: user.id,
+      message: "به نظرم این بن اشتباهیه، لطفاً بررسی کنید.",
     },
   });
 }
@@ -197,13 +272,17 @@ async function main(): Promise<void> {
   const users = await seedUsers(20);
   await seedMatchPreferences(users);
   await seedMatches(users);
-  await seedReports(users);
   await seedSystemAdmin();
+  const systemAdmin = await prisma.adminUser.findUniqueOrThrow({ where: { username: "system" } });
+  await seedReports(users, systemAdmin.id);
   await seedBannedPatterns();
   await seedChatSession(users);
+  await seedPendingPhoto(users);
+  await seedBanAppeal(users, systemAdmin.id);
   console.log(
-    `Seeded ${users.length} users, 5 matches (3 active/2 ended), 1 pending report, ` +
-      `1 system admin, 3 banned patterns, 1 active chat session with 2 messages.`,
+    `Seeded ${users.length} users, 5 matches (3 active/2 ended), 1 pending + 1 resolved report, ` +
+      `1 system admin, 3 banned patterns, 1 active chat session with 2 messages, ` +
+      `1 pending photo review, 1 banned user with a pending appeal.`,
   );
 }
 

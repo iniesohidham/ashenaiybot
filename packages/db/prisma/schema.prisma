@@ -73,6 +73,21 @@ enum ReportStatus {
   actioned
 }
 
+// EPIC 5 (US-5.3) — the action a moderator took when resolving a Report.
+enum ReportResolutionAction {
+  no_action
+  warn
+  temporary_ban
+  permanent_ban
+}
+
+// EPIC 5 (US-5.5) — outcome of a ban appeal review.
+enum BanAppealStatus {
+  pending
+  upheld
+  reversed
+}
+
 enum AdminRole {
   admin
   moderator
@@ -114,6 +129,7 @@ model User {
   blocksReceived  Block[] @relation("BlockBlocked")
 
   banRecords        BanRecord[]
+  banAppeals        BanAppeal[]
   endedChatSessions ChatSession[] @relation("ChatSessionEndedBy")
 
   @@index([status])
@@ -127,6 +143,13 @@ model Profile {
   interests             String[]         @default([])
   photoUrl              String?
   photoModerationStatus ModerationStatus @default(pending)
+  // EPIC 5 (US-5.2) — when the current photoUrl was submitted; set whenever
+  // a new photo is uploaded (see modules/profiles/service.ts's
+  // upsertProfile). Orders the manual review queue oldest-first, same
+  // convention as Report's severity-then-createdAt ordering (US-5.3) — there
+  // is no automated classifier yet (see moderation service's doc comment),
+  // so every photo waits here until a moderator decision lands (EPIC 7).
+  photoSubmittedAt      DateTime?
 }
 
 // EPIC 3 (US-3.1) — who a user wants to see in their candidate queue. Lazily
@@ -202,8 +225,18 @@ model Message {
   contentRef     String
   sentAt         DateTime    @default(now())
   moderationFlag Boolean     @default(false)
+  // EPIC 5 (US-5.1) — which BannedPattern tripped moderationFlag, if any.
+  // Nullable and onDelete: SetNull (not Cascade) — a historical flagged
+  // message must survive an admin later editing/removing the pattern list
+  // (US-7.5), otherwise false-positive-rate monitoring loses its own
+  // evidence the moment the offending pattern is fixed.
+  matchedPatternId String?
+  matchedPattern   BannedPattern? @relation(fields: [matchedPatternId], references: [id], onDelete: SetNull)
 
   @@index([sessionId])
+  // EPIC 5 (US-5.6) — spam-pattern detection queries recent messages by
+  // sender within a time window (see modules/moderation/service.ts).
+  @@index([senderUserId, sentAt])
 }
 
 model Report {
@@ -221,6 +254,12 @@ model Report {
   severity       ReportSeverity @default(normal)
   status         ReportStatus   @default(pending)
   createdAt      DateTime       @default(now())
+  // EPIC 5 (US-5.3) — set together when a moderator resolves this report;
+  // resolvedAt - createdAt is the G3 SLA metric (getReportSlaStats()).
+  resolvedAt        DateTime?
+  resolvedByAdminId String?
+  resolvedByAdmin   AdminUser?             @relation("ReportResolvedBy", fields: [resolvedByAdminId], references: [id])
+  resolutionAction  ReportResolutionAction?
 
   @@index([status, severity, createdAt])
 }
@@ -243,7 +282,9 @@ model AdminUser {
   role         AdminRole
   createdAt    DateTime  @default(now())
 
-  issuedBans BanRecord[]
+  issuedBans      BanRecord[]
+  resolvedReports Report[]    @relation("ReportResolvedBy")
+  resolvedAppeals BanAppeal[] @relation("BanAppealResolvedBy")
 }
 
 // EPIC 5 (US-5.1, minimal slice) — banned-word/pattern list, editable without a
@@ -254,6 +295,8 @@ model BannedPattern {
   pattern   String
   severity  ReportSeverity @default(normal)
   createdAt DateTime       @default(now())
+
+  matchedMessages Message[]
 }
 
 model BanRecord {
@@ -267,5 +310,28 @@ model BanRecord {
   issuedByAdmin   AdminUser @relation(fields: [issuedByAdminId], references: [id])
   createdAt       DateTime  @default(now())
 
+  appeal BanAppeal?
+
   @@index([userId])
+}
+
+// EPIC 5 (US-5.5) — a banned user's request to have their ban reconsidered.
+// One-to-one with BanRecord (@unique banRecordId) enforces "at most one
+// appeal per ban" at the DB level rather than relying solely on an
+// app-level check-then-create (see modules/moderation/service.ts's
+// hasAppealForBan/submitBanAppeal).
+model BanAppeal {
+  id                String          @id @default(cuid())
+  banRecordId       String          @unique
+  banRecord         BanRecord       @relation(fields: [banRecordId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message           String
+  status            BanAppealStatus @default(pending)
+  createdAt         DateTime        @default(now())
+  resolvedAt        DateTime?
+  resolvedByAdminId String?
+  resolvedByAdmin   AdminUser?      @relation("BanAppealResolvedBy", fields: [resolvedByAdminId], references: [id])
+
+  @@index([status, createdAt])
 }

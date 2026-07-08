@@ -29,5 +29,9 @@ export {
 export {
   REPORT_REASON_OPTIONS,
   isReportReasonValue,
+  MESSAGE_RATE_LIMIT_PER_MINUTE,
+  SPAM_DUPLICATE_SESSION_THRESHOLD,
+  SPAM_DETECTION_WINDOW_MINUTES,
+  BAN_APPEAL_MAX_LENGTH,
   type ReportReasonValue,
 } from "./moderation.js";

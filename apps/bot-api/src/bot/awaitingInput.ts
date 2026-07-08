@@ -19,7 +19,10 @@
 // handlers know whether they're mid-onboarding-chain or a standalone edit.
 // "age_range" (EPIC 3, US-3.1) is edit-only — match preferences aren't part
 // of required onboarding, so it never needs an onboarding-chain distinction.
-export type AwaitingField = "birth_date" | "bio" | "photo" | "interests" | "age_range";
+// "ban_appeal" (EPIC 5, US-5.5) is likewise onboarding-chain-agnostic — it's
+// read by identityMiddleware.ts, not onboarding.ts, to capture a banned
+// user's free-text appeal message.
+export type AwaitingField = "birth_date" | "bio" | "photo" | "interests" | "age_range" | "ban_appeal";
 export type AwaitingMode = "onboarding" | "edit";
 
 export interface AwaitingInput {

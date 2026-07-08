@@ -261,3 +261,21 @@ export function banTemporaryMessage(expiresAt: Date): string {
   const formatted = expiresAt.toISOString().slice(0, 10);
   return `حسابت به‌طور موقت مسدود شده و تا ${formatted} امکان استفاده از آشنایی رو نداری.`;
 }
+
+// EPIC 5 (US-5.6) — message rate limiting. Distinct copy from
+// MESSAGE_BLOCKED_MESSAGE per the UX tone rule (state what happened + why +
+// how to fix): this is about pace, not content, so it shouldn't read like a
+// content violation.
+export const RATE_LIMIT_EXCEEDED_MESSAGE =
+  "خیلی سریع داری پیام می‌فرستی. یه لحظه صبر کن و دوباره امتحان کن.";
+
+// EPIC 5 (US-5.5) — ban appeal flow.
+export const BAN_APPEAL_BUTTON_LABEL = "ثبت اعتراض به مسدودیت";
+export const BAN_APPEAL_PROMPT =
+  "دلیل اعتراضت به این مسدودیت رو بنویس (حداکثر ۵۰۰ کاراکتر). این متن رو تیم ما بررسی می‌کنه.";
+export const BAN_APPEAL_TOO_LONG_MESSAGE =
+  "متن اعتراضت خیلی طولانیه. لطفاً کوتاه‌ترش کن (حداکثر ۵۰۰ کاراکتر) و دوباره بفرست.";
+export const BAN_APPEAL_SUBMITTED_MESSAGE =
+  "اعتراضت ثبت شد و توسط تیم ما بررسی می‌شه.";
+export const BAN_APPEAL_ALREADY_SUBMITTED_MESSAGE =
+  "برای این مسدودیت قبلاً یه اعتراض ثبت کردی. منتظر بررسی تیم ما باش.";

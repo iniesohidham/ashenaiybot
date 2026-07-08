@@ -14,6 +14,7 @@ import type { BotContext } from "./context.js";
 import {
   AGE_GATE_CANCEL_LABEL,
   AGE_GATE_CONFIRM_LABEL,
+  BAN_APPEAL_BUTTON_LABEL,
   BIO_PROMPT_SKIP_LABEL,
   BLOCK_CONFIRM_NO_LABEL,
   BLOCK_CONFIRM_YES_LABEL,
@@ -90,6 +91,7 @@ export const CB = {
   reportCancel: "report:cancel",
   blockConfirm: (sessionId: string): string => `block:confirm:${sessionId}`,
   blockCancel: "block:cancel",
+  banAppealStart: "ban:appeal:start",
 } as const;
 
 const SWIPE_LIKE_PREFIX = "swipe:like:";
@@ -381,4 +383,9 @@ export function blockConfirmKeyboard(sessionId: string): InlineKeyboard {
 /** Shown after a chat ends (any reason) — reuses the existing CB.menuFind callback, already handled by matching.ts. */
 export function chatEndedKeyboard(): InlineKeyboard {
   return new InlineKeyboard().text(FIND_NEXT_LABEL, CB.menuFind);
+}
+
+/** EPIC 5 (US-5.5) — attached to the ban message itself; identityMiddleware.ts handles the callback. */
+export function banAppealKeyboard(): InlineKeyboard {
+  return new InlineKeyboard().text(BAN_APPEAL_BUTTON_LABEL, CB.banAppealStart);
 }
