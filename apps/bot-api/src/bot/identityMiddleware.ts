@@ -5,13 +5,14 @@ import { getLatestBanRecord, hasAppealForBan, submitBanAppeal } from "../modules
 import type { AwaitingInputStore } from "./awaitingInput.js";
 import {
   BAN_APPEAL_ALREADY_SUBMITTED_MESSAGE,
+  BAN_APPEAL_OFFER_MESSAGE,
   BAN_APPEAL_PROMPT,
   BAN_APPEAL_SUBMITTED_MESSAGE,
   BAN_APPEAL_TOO_LONG_MESSAGE,
   BAN_PERMANENT_MESSAGE,
   banTemporaryMessage,
 } from "./copy.js";
-import { banAppealKeyboard, CB } from "./keyboards.js";
+import { banAppealKeyboard, chatToolbarRemove, CB } from "./keyboards.js";
 import type { BotContext } from "./context.js";
 
 export interface IdentityMiddlewareDeps {
@@ -116,7 +117,22 @@ export function createIdentityMiddleware(deps: IdentityMiddlewareDeps) {
     // rather than let ctx.reply() throw for one this bot doesn't otherwise
     // handle anyway.
     if (ctx.chat) {
-      await ctx.reply(message, latestBan ? { reply_markup: banAppealKeyboard() } : undefined);
+      // banUser() ends the active ChatSession but never messages the banned
+      // user directly (bans surface reactively, on their next interaction —
+      // see banUser()'s doc comment) — so the chatToolbarKeyboard() reply
+      // keyboard from that session is still sitting on their client with
+      // nothing having ever told it to go away. Telegram reply keyboards
+      // persist across every subsequent message until explicitly replaced/
+      // removed, so this has to be cleared here, the first place a banned
+      // user's client hears from the bot again. Two separate replies
+      // because a single sendMessage can carry only one reply_markup type
+      // (remove_keyboard vs. inline) — same "two messages, one clears the
+      // custom keyboard, one carries the inline follow-up" idiom as
+      // bot/chat.ts's handleEndChat/notifyOtherPartySessionEnded.
+      await ctx.reply(message, { reply_markup: chatToolbarRemove() });
+      if (latestBan) {
+        await ctx.reply(BAN_APPEAL_OFFER_MESSAGE, { reply_markup: banAppealKeyboard() });
+      }
     }
   };
 }

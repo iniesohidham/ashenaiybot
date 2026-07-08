@@ -271,6 +271,8 @@ export const RATE_LIMIT_EXCEEDED_MESSAGE =
 
 // EPIC 5 (US-5.5) — ban appeal flow.
 export const BAN_APPEAL_BUTTON_LABEL = "ثبت اعتراض به مسدودیت";
+export const BAN_APPEAL_OFFER_MESSAGE =
+  "اگه فکر می‌کنی این مسدودیت اشتباهه، می‌تونی اعتراض ثبت کنی.";
 export const BAN_APPEAL_PROMPT =
   "دلیل اعتراضت به این مسدودیت رو بنویس (حداکثر ۵۰۰ کاراکتر). این متن رو تیم ما بررسی می‌کنه.";
 export const BAN_APPEAL_TOO_LONG_MESSAGE =
