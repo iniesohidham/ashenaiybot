@@ -1,8 +1,8 @@
 import type { Bot } from "grammy";
 import type { Redis } from "ioredis";
 import { parseAgeRangeInput, type GenderValue } from "@ashena/shared";
-import type { Match } from "@ashena/db";
-import { deriveOnboardingStep, findUserById } from "../modules/users/service.js";
+import { deriveOnboardingStep } from "../modules/users/service.js";
+import { notifyMatch } from "./notifications.js";
 import {
   checkAndConsumeSwipeRateLimit,
   clearBrowsingState,
@@ -18,7 +18,6 @@ import type { AwaitingInputStore } from "./awaitingInput.js";
 import { sendMainMenu } from "./onboarding.js";
 import {
   FIND_MATCH_EMPTY_MESSAGE,
-  MATCH_FOUND_MESSAGE,
   PREF_AGE_RANGE_INVALID_FORMAT_MESSAGE,
   PREF_AGE_RANGE_MIN_AFTER_MAX_MESSAGE,
   PREF_AGE_RANGE_OUT_OF_BOUNDS_MESSAGE,
@@ -42,7 +41,6 @@ import {
   getMessageInlineKeyboard,
   getSelectedGenderPreferences,
   mainMenuKeyboard,
-  matchFoundKeyboard,
   prefCancelKeyboard,
   setsAreEqual,
   settingsMenuKeyboard,
@@ -52,32 +50,6 @@ import {
 export interface MatchingDeps {
   redis: Redis;
   awaitingInput: AwaitingInputStore;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Best-effort delivery with a couple of retries (US-3.4: "log and retry,
- * don't silently drop") — used for both match notifications independently,
- * so one failing (e.g. the other user blocked the bot) can't swallow the one
- * that succeeds.
- */
-async function sendWithRetry(send: () => Promise<unknown>, label: string): Promise<void> {
-  const attempts = 3;
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    try {
-      await send();
-      return;
-    } catch (err) {
-      if (attempt === attempts) {
-        console.error(`[matching] failed to deliver ${label} after ${attempts} attempts`, err);
-        return;
-      }
-      await delay(300 * attempt);
-    }
-  }
 }
 
 /**
@@ -113,24 +85,6 @@ export function registerMatchingHandlers(bot: Bot<BotContext>, deps: MatchingDep
     await ctx.reply(`${SETTINGS_MENU_MESSAGE}\n\n${formatPreferenceSummary(preference)}`, {
       reply_markup: settingsMenuKeyboard(),
     });
-  }
-
-  async function notifyMatch(ctx: BotContext, match: Match, otherUserId: string): Promise<void> {
-    const keyboard = matchFoundKeyboard(match.id);
-    const other = await findUserById(otherUserId);
-    await Promise.all([
-      sendWithRetry(
-        () => ctx.reply(MATCH_FOUND_MESSAGE, { reply_markup: keyboard }),
-        `match notification to ${ctx.internalUser.id}`,
-      ),
-      other
-        ? sendWithRetry(
-            () =>
-              ctx.api.sendMessage(other.telegramId.toString(), MATCH_FOUND_MESSAGE, { reply_markup: keyboard }),
-            `match notification to ${otherUserId}`,
-          )
-        : Promise.resolve(),
-    ]);
   }
 
   // Last handler in the chain today (see registerMatchingHandlers' doc
@@ -197,7 +151,7 @@ export function registerMatchingHandlers(bot: Bot<BotContext>, deps: MatchingDep
       await ctx.answerCallbackQuery();
       const { match } = await recordSwipeAndCheckMatch(userId, swipe.candidateId, swipe.isLike ? "like" : "pass");
       if (match) {
-        await notifyMatch(ctx, match, swipe.candidateId);
+        await notifyMatch(ctx.api, ctx.internalUser.telegramId, match, swipe.candidateId);
       }
       await showNextCandidateOrEmpty(ctx);
       return;

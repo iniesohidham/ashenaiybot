@@ -1,6 +1,11 @@
 export { parseEnv } from "./env.js";
 export { APP_NAME } from "./constants.js";
 export { upsertProfileSchema, type UpsertProfileInput } from "./api/profile.js";
+export { updateAccountSchema, type UpdateAccountInput } from "./api/account.js";
+export { swipeActionSchema, type SwipeActionInput } from "./api/swipe.js";
+export { upsertPreferenceSchema, type UpsertPreferenceInput } from "./api/preference.js";
+export { sendTextMessageSchema, type SendTextMessageInput } from "./api/chat.js";
+export { fileReportSchema, type FileReportInput } from "./api/report.js";
 export {
   MIN_AGE,
   BIO_MAX_LENGTH,

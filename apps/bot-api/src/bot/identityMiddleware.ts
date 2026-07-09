@@ -4,6 +4,7 @@ import { findOrCreateUserByTelegramId } from "../modules/users/service.js";
 import { getLatestBanRecord, hasAppealForBan, submitBanAppeal } from "../modules/moderation/service.js";
 import type { AwaitingInputStore } from "./awaitingInput.js";
 import {
+  ACCOUNT_DELETED_MESSAGE,
   BAN_APPEAL_ALREADY_SUBMITTED_MESSAGE,
   BAN_APPEAL_OFFER_MESSAGE,
   BAN_APPEAL_PROMPT,
@@ -52,6 +53,22 @@ export function createIdentityMiddleware(deps: IdentityMiddlewareDeps) {
       telegramId: BigInt(ctx.from.id),
       languageCode: ctx.from.language_code,
     });
+
+    // EPIC 6 (US-6.6): a Mini-App-deleted account must not keep working
+    // bot-side either — same choke point as the banned check below, but
+    // simpler (no appeal machinery, deletion was the user's own action).
+    // Clears any stale chatToolbarKeyboard() the same way the banned branch
+    // does, in case deletion happened mid-chat via the Mini App rather than
+    // by ending the chat in Telegram first.
+    if (ctx.internalUser.status === "deleted") {
+      if (ctx.callbackQuery) {
+        await ctx.answerCallbackQuery();
+      }
+      if (ctx.chat) {
+        await ctx.reply(ACCOUNT_DELETED_MESSAGE, { reply_markup: chatToolbarRemove() });
+      }
+      return;
+    }
 
     if (ctx.internalUser.status !== "banned") {
       await next();

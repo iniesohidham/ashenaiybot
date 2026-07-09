@@ -168,6 +168,26 @@ export async function getActiveSessionForUser(redis: Redis, userId: string): Pro
 }
 
 /**
+ * ALL of a user's active sessions — unlike getActiveSessionForUser (a
+ * singleton "most recently opened" pointer, the right choice for routing a
+ * plain-text reply), this is for teardown paths where every simultaneously-
+ * active Match/ChatSession a user holds (a documented possibility — nothing
+ * in EPIC 3 prevents more than one) must be ended, not just the newest one.
+ * moderation/service.ts's banUser() and routes/v1/account.ts's account
+ * deletion both need this — previously banUser() had its own inlined copy
+ * of this exact query.
+ */
+export function listActiveSessionsForUser(userId: string): Promise<Array<ChatSession & { match: Match }>> {
+  return prisma.chatSession.findMany({
+    where: {
+      endedAt: null,
+      match: { status: "active", OR: [{ userAId: userId }, { userBId: userId }] },
+    },
+    include: { match: true },
+  });
+}
+
+/**
  * Looks a session up by id directly (no Redis, no "active" filter) — used by
  * report/block handling, which already has the exact sessionId from its own
  * callback data and needs to act correctly whether or not the session is
@@ -179,6 +199,29 @@ export function getSessionWithMatch(sessionId: string): Promise<(ChatSession & {
   return prisma.chatSession.findUnique({ where: { id: sessionId }, include: { match: true } });
 }
 
+export interface OwnedSession {
+  session: ChatSession & { match: Match };
+  otherUserId: string;
+}
+
+/**
+ * Resolves a session by id and confirms the given user is actually a
+ * participant — built on getSessionWithMatch's permissive (no "active"
+ * filter) lookup, so it's only for report/block/end actions that must
+ * still work on a session that just ended. EPIC 6 (US-6.5) reuses this
+ * exact check the bot's report/block flow already needed; message-SENDING
+ * routes must NOT use this — they need the active-session check
+ * getActiveSessionForUser provides (see chat.ts's message handlers and
+ * routes/v1/chat.ts's equivalents), otherwise a stale sessionId held by a
+ * blocked/ended-out party could still relay content.
+ */
+export async function resolveSessionParticipant(userId: string, sessionId: string): Promise<OwnedSession | null> {
+  const session = await getSessionWithMatch(sessionId);
+  if (!session) return null;
+  if (session.match.userAId !== userId && session.match.userBId !== userId) return null;
+  return { session, otherUserId: otherPartyId(session.match, userId) };
+}
+
 export function persistMessage(
   sessionId: string,
   senderUserId: string,
@@ -188,6 +231,34 @@ export function persistMessage(
   matchedPatternId: string | null = null,
 ): Promise<Message> {
   return prisma.message.create({ data: { sessionId, senderUserId, type, contentRef, moderationFlag, matchedPatternId } });
+}
+
+/**
+ * EPIC 6 — a single-message-by-id lookup, scoped to its session. Distinct
+ * from listMessages(): the Mini App's media-serving route needs exactly one
+ * message by id, and doing that via listMessages({limit: N}).find(...) would
+ * only ever search the OLDEST N messages (listMessages orders ascending with
+ * no cursor), silently 404ing on media from any session that outgrows N.
+ */
+export function findMessageById(sessionId: string, messageId: string): Promise<Message | null> {
+  return prisma.message.findFirst({ where: { id: messageId, sessionId } });
+}
+
+/**
+ * EPIC 6 (US-6.5) — the Mini App polls this for message history/new messages
+ * since its last-seen id; the bot has never needed a read path here, it only
+ * ever relays live Telegram updates 1:1. Prisma's built-in cursor pagination
+ * (cursor + skip:1) rather than a hand-rolled sentAt comparison, since
+ * Message.id is the natural per-message cursor the client already has.
+ */
+export function listMessages(sessionId: string, options: { afterId?: string; limit?: number } = {}): Promise<Message[]> {
+  const { afterId, limit = 100 } = options;
+  return prisma.message.findMany({
+    where: { sessionId },
+    orderBy: { sentAt: "asc" },
+    take: limit,
+    ...(afterId ? { cursor: { id: afterId }, skip: 1 } : {}),
+  });
 }
 
 export interface EndSessionResult {

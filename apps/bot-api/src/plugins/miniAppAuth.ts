@@ -30,10 +30,22 @@ export function createMiniAppAuthPreHandler(botToken: string) {
       if (!validated.user) {
         throw new InvalidInitDataError("initData has no user field");
       }
-      request.miniAppUser = await findOrCreateUserByTelegramId({
+      const user = await findOrCreateUserByTelegramId({
         telegramId: BigInt(validated.user.id),
         languageCode: validated.user.languageCode,
       });
+      // EPIC 6: this preHandler now backs the full matching/chat/moderation
+      // REST surface, not just profile CRUD — a banned or (self-)deleted
+      // account must not be able to use it, mirroring identityMiddleware.ts's
+      // bot-wide short-circuit for the exact same statuses. No ban-appeal
+      // flow here (that stays bot-only, per EPIC 5's design) — the Mini App
+      // just shows its own graceful error state on a 403, same idea as
+      // US-6.1's "opened outside Telegram" state.
+      if (user.status !== "active") {
+        await sendApiError(reply, 403, "ACCOUNT_INACTIVE", "This account cannot use the API.");
+        return;
+      }
+      request.miniAppUser = user;
     } catch (err) {
       if (err instanceof InvalidInitDataError) {
         await sendApiError(reply, 401, "UNAUTHENTICATED", "Invalid Telegram init data.");

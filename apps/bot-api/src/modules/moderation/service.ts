@@ -16,7 +16,7 @@ import {
   SPAM_DETECTION_WINDOW_MINUTES,
   SPAM_DUPLICATE_SESSION_THRESHOLD,
 } from "@ashena/shared";
-import { endSession, type EndSessionResult } from "../chat/service.js";
+import { endSession, listActiveSessionsForUser, type EndSessionResult } from "../chat/service.js";
 
 // EPIC 5 (US-5.1, US-5.4 minimal slice from EPIC 4; the rest of EPIC 5 —
 // US-5.1's monitoring hook, US-5.2's photo queue, US-5.3's report triage,
@@ -263,6 +263,31 @@ export function upsertBlock(blockerId: string, blockedId: string): Promise<Block
   });
 }
 
+export interface BlockedUserEntry {
+  blockedUserId: string;
+  createdAt: Date;
+  profile: Pick<Profile, "displayBio" | "interests"> | null;
+}
+
+/** EPIC 6 (US-6.6) settings screen's blocked-users list — the bot has never needed this query (blocking only ever happens inline from an active chat, with no list view). */
+export async function listBlockedUsers(blockerId: string): Promise<BlockedUserEntry[]> {
+  const rows = await prisma.block.findMany({
+    where: { blockerId },
+    orderBy: { createdAt: "desc" },
+    include: { blocked: { include: { profile: { select: { displayBio: true, interests: true } } } } },
+  });
+  return rows.map((row) => ({
+    blockedUserId: row.blockedId,
+    createdAt: row.createdAt,
+    profile: row.blocked.profile,
+  }));
+}
+
+/** Unblock — no-op if no Block row exists (deleteMany rather than delete, so an already-unblocked/duplicate request doesn't throw). */
+export async function removeBlock(blockerId: string, blockedId: string): Promise<void> {
+  await prisma.block.deleteMany({ where: { blockerId, blockedId } });
+}
+
 // --- Photo moderation queue (US-5.2) ---------------------------------------
 //
 // No automated NSFW classifier yet (an explicit, deliberate product decision
@@ -338,12 +363,7 @@ export async function banUser(
     prisma.user.update({ where: { id: targetUserId }, data: { status: "banned" } }),
   ]);
 
-  const activeSessions = await prisma.chatSession.findMany({
-    where: {
-      endedAt: null,
-      match: { status: "active", OR: [{ userAId: targetUserId }, { userBId: targetUserId }] },
-    },
-  });
+  const activeSessions = await listActiveSessionsForUser(targetUserId);
 
   const endedSessions: EndSessionResult[] = [];
   for (const session of activeSessions) {

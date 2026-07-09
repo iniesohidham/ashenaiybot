@@ -281,3 +281,10 @@ export const BAN_APPEAL_SUBMITTED_MESSAGE =
   "اعتراضت ثبت شد و توسط تیم ما بررسی می‌شه.";
 export const BAN_APPEAL_ALREADY_SUBMITTED_MESSAGE =
   "برای این مسدودیت قبلاً یه اعتراض ثبت کردی. منتظر بررسی تیم ما باش.";
+
+// EPIC 6 (US-6.6) — account deletion from the Mini App's settings screen.
+// Neutral, final copy (no appeal offer, and no "send /start to rebuild your
+// account" CTA — identityMiddleware resolves the same User row by
+// telegramId every time, so re-onboarding a deleted account isn't actually
+// possible yet; the copy must not promise something the code doesn't do).
+export const ACCOUNT_DELETED_MESSAGE = "این حساب حذف شده و دیگه قابل استفاده نیست.";

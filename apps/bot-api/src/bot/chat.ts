@@ -1,14 +1,12 @@
 import type { Bot } from "grammy";
 import type { Redis } from "ioredis";
-import type { ChatSession, Match } from "@ashena/db";
 import type { ReportReasonValue } from "@ashena/shared";
 import { findUserById } from "../modules/users/service.js";
 import {
   endSession,
   getActiveSessionForUser,
-  getSessionWithMatch,
-  otherPartyId,
   persistMessage,
+  resolveSessionParticipant,
   startOrResumeSession,
   type ActiveSession,
 } from "../modules/chat/service.js";
@@ -20,6 +18,7 @@ import {
   hasFiledReportForSession,
   upsertBlock,
 } from "../modules/moderation/service.js";
+import { notifyChatStarted, notifyOtherPartySessionEnded, sendWithRetry } from "./notifications.js";
 import type { BotContext } from "./context.js";
 import {
   BLOCK_CANCELLED_MESSAGE,
@@ -28,7 +27,6 @@ import {
   CHAT_ALREADY_ENDED_MESSAGE,
   CHAT_ENDED_BY_YOU_MESSAGE,
   CHAT_ENDED_NEXT_PROMPT,
-  CHAT_PARTNER_LEFT_MESSAGE,
   CHAT_RESUMED_MESSAGE,
   CHAT_STARTED_MESSAGE,
   CHAT_TOOLBAR_BLOCK_LABEL,
@@ -56,27 +54,6 @@ import {
 
 export interface ChatDeps {
   redis: Redis;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** Same best-effort-with-retries approach as bot/matching.ts's notifyMatch — one failing delivery (e.g. the other user blocked the bot) can't swallow the one that succeeds. */
-async function sendWithRetry(send: () => Promise<unknown>, label: string): Promise<void> {
-  const attempts = 3;
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    try {
-      await send();
-      return;
-    } catch (err) {
-      if (attempt === attempts) {
-        console.error(`[chat] failed to deliver ${label} after ${attempts} attempts`, err);
-        return;
-      }
-      await delay(300 * attempt);
-    }
-  }
 }
 
 /**
@@ -117,28 +94,6 @@ export function registerChatHandlers(bot: Bot<BotContext>, deps: ChatDeps): void
     return withinLimit;
   }
 
-  /**
-   * Notifies the other party that the session ended, using the same neutral
-   * copy regardless of *why* it ended (user-ended, reported, banned) — per
-   * the UX tone rule, a moderation-driven ending never reveals that a
-   * moderation action took place. Block is the one exception (US-4.6): it
-   * calls endSession directly and skips this entirely, no notification at all.
-   */
-  async function notifyOtherPartySessionEnded(ctx: BotContext, match: Match, actingUserId: string): Promise<void> {
-    const otherId = otherPartyId(match, actingUserId);
-    const other = await findUserById(otherId);
-    if (!other) return;
-    const chatId = other.telegramId.toString();
-    await sendWithRetry(
-      () => ctx.api.sendMessage(chatId, CHAT_PARTNER_LEFT_MESSAGE, { reply_markup: chatToolbarRemove() }),
-      `session-ended notification to ${otherId}`,
-    );
-    await sendWithRetry(
-      () => ctx.api.sendMessage(chatId, CHAT_ENDED_NEXT_PROMPT, { reply_markup: chatEndedKeyboard() }),
-      `session-ended next-prompt to ${otherId}`,
-    );
-  }
-
   async function handleStartOrResume(ctx: BotContext, matchId: string): Promise<void> {
     const result = await startOrResumeSession(redis, matchId, ctx.internalUser.id);
     if (!result) {
@@ -153,18 +108,9 @@ export function registerChatHandlers(bot: Bot<BotContext>, deps: ChatDeps): void
       return;
     }
 
-    const other = await findUserById(result.otherUserId);
     await Promise.all([
       ctx.reply(CHAT_STARTED_MESSAGE, { reply_markup: chatToolbarKeyboard() }),
-      other
-        ? sendWithRetry(
-            () =>
-              ctx.api.sendMessage(other.telegramId.toString(), CHAT_STARTED_MESSAGE, {
-                reply_markup: chatToolbarKeyboard(),
-              }),
-            `chat-started notification to ${result.otherUserId}`,
-          )
-        : Promise.resolve(),
+      notifyChatStarted(ctx.api, result.otherUserId),
     ]);
   }
 
@@ -173,33 +119,13 @@ export function registerChatHandlers(bot: Bot<BotContext>, deps: ChatDeps): void
     await ctx.reply(CHAT_ENDED_BY_YOU_MESSAGE, { reply_markup: chatToolbarRemove() });
     await ctx.reply(CHAT_ENDED_NEXT_PROMPT, { reply_markup: chatEndedKeyboard() });
     if (ended) {
-      await notifyOtherPartySessionEnded(ctx, ended.match, ctx.internalUser.id);
+      await notifyOtherPartySessionEnded(ctx.api, ended.match, ctx.internalUser.id);
     }
-  }
-
-  /**
-   * Looks up by the sessionId embedded in the callback data itself (not the
-   * Redis "current active session" pointer) — the report/block action is
-   * valid regardless of whether the session is STILL active by the time the
-   * user confirms it (the other party could have ended/reported/blocked
-   * first, or it could have hit the idle timeout, in the few seconds the
-   * reason-picker/confirm dialog was open); there just isn't a session left
-   * to end in that case. Returns null only when the sessionId doesn't
-   * resolve to a real session belonging to this user at all.
-   */
-  async function resolveSessionForAction(
-    userId: string,
-    sessionId: string,
-  ): Promise<{ session: ChatSession & { match: Match }; otherUserId: string } | null> {
-    const session = await getSessionWithMatch(sessionId);
-    if (!session) return null;
-    if (session.match.userAId !== userId && session.match.userBId !== userId) return null;
-    return { session, otherUserId: otherPartyId(session.match, userId) };
   }
 
   async function handleReportReasonPicked(ctx: BotContext, reason: ReportReasonValue, sessionId: string): Promise<void> {
     const reporterId = ctx.internalUser.id;
-    const resolved = await resolveSessionForAction(reporterId, sessionId);
+    const resolved = await resolveSessionParticipant(reporterId, sessionId);
     if (!resolved) {
       await ctx.reply(CHAT_ALREADY_ENDED_MESSAGE, { reply_markup: chatEndedKeyboard() });
       return;
@@ -222,13 +148,13 @@ export function registerChatHandlers(bot: Bot<BotContext>, deps: ChatDeps): void
     await ctx.reply(REPORT_SUBMITTED_MESSAGE, { reply_markup: chatToolbarRemove() });
     await ctx.reply(CHAT_ENDED_NEXT_PROMPT, { reply_markup: chatEndedKeyboard() });
     if (ended) {
-      await notifyOtherPartySessionEnded(ctx, ended.match, reporterId);
+      await notifyOtherPartySessionEnded(ctx.api, ended.match, reporterId);
     }
   }
 
   async function handleBlockConfirmed(ctx: BotContext, sessionId: string): Promise<void> {
     const blockerId = ctx.internalUser.id;
-    const resolved = await resolveSessionForAction(blockerId, sessionId);
+    const resolved = await resolveSessionParticipant(blockerId, sessionId);
     if (!resolved) {
       await ctx.reply(CHAT_ALREADY_ENDED_MESSAGE, { reply_markup: chatEndedKeyboard() });
       return;

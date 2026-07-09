@@ -39,6 +39,31 @@ export function updateUser(id: string, input: UpdateUserInput): Promise<User> {
   return prisma.user.update({ where: { id }, data: input });
 }
 
+/**
+ * EPIC 6 (US-6.6) account deletion. A soft delete, not `prisma.user.delete` —
+ * most of User's relations are `onDelete: Cascade`, which would wipe
+ * Report/BanRecord history other moderation queries rely on as an audit
+ * trail. Flips `status` to `deleted` (identityMiddleware.ts short-circuits
+ * this the same way it already does `banned`, so the account genuinely can't
+ * keep being used afterward) and scrubs Profile content immediately.
+ * Deleting the MatchPreference row reuses the exact mechanism that already
+ * makes a user invisible as a candidate to everyone else (see
+ * matching/service.ts's queryCandidateIds) — no separate "hidden" flag
+ * needed. Ending any active chat session and clearing Redis browsing state
+ * is the caller's job (route-level orchestration), same "one service doesn't
+ * reach into another's concern" pattern chat/moderation already follow.
+ */
+export async function deleteAccount(userId: string): Promise<void> {
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: userId }, data: { status: "deleted" } }),
+    prisma.profile.updateMany({
+      where: { userId },
+      data: { displayBio: null, interests: [], photoUrl: null, photoModerationStatus: "pending" },
+    }),
+    prisma.matchPreference.deleteMany({ where: { userId } }),
+  ]);
+}
+
 export type OnboardingStep = "age_gate" | "gender" | "birth_date" | "complete";
 
 /**

@@ -1,50 +1,31 @@
 import type { FastifyInstance } from "fastify";
-import { upsertProfileSchema } from "@ashena/shared";
-import { createMiniAppAuthPreHandler } from "../../plugins/miniAppAuth.js";
-import { findProfileByUserId, upsertProfile } from "../../modules/profiles/service.js";
-import { sendApiError, zodErrorToFields } from "../../lib/apiError.js";
+import multipart from "@fastify/multipart";
+import { registerProfileRoutes } from "./profile.js";
+import { registerPreferenceRoutes } from "./preferences.js";
+import { registerMatchingRoutes } from "./matching.js";
+import { registerChatRoutes } from "./chat.js";
+import { registerBlockRoutes } from "./blocks.js";
+import { registerAccountRoutes } from "./account.js";
+import type { RouteDeps } from "./deps.js";
 import type { Env } from "../../env.js";
 
 /**
  * EPIC 1's "thin CRUD" REST skeleton (US-1.5): versioned routes, Zod
  * validation with field-level errors, and one consistent error shape.
- * Onboarding rules themselves (age gate, etc.) land in EPIC 2/6.
+ * EPIC 6 (US-6.1..6.6) is what actually fills this surface out — every
+ * handler below is a thin wrapper over the same modules/*\/service.ts
+ * functions the bot already calls, split into one file per concern for
+ * readability now that it's no longer just profile CRUD.
  */
-export function registerV1Routes(app: FastifyInstance, env: Pick<Env, "TELEGRAM_BOT_TOKEN">): void {
-  const authenticate = createMiniAppAuthPreHandler(env.TELEGRAM_BOT_TOKEN);
-
-  app.get("/api/v1/me", { preHandler: authenticate }, async (request, reply) => {
-    const user = request.miniAppUser;
-    if (!user) {
-      return sendApiError(reply, 401, "UNAUTHENTICATED", "Missing Telegram init data.");
-    }
-    const profile = await findProfileByUserId(user.id);
-    return {
-      id: user.id,
-      gender: user.gender,
-      birthDate: user.birthDate,
-      status: user.status,
-      profile,
-    };
+export function registerV1Routes(app: FastifyInstance, env: Pick<Env, "TELEGRAM_BOT_TOKEN">, deps: RouteDeps): void {
+  app.register(multipart, {
+    limits: { fileSize: 10 * 1024 * 1024, files: 1 },
   });
 
-  app.put("/api/v1/profile", { preHandler: authenticate }, async (request, reply) => {
-    const user = request.miniAppUser;
-    if (!user) {
-      return sendApiError(reply, 401, "UNAUTHENTICATED", "Missing Telegram init data.");
-    }
-
-    const parsed = upsertProfileSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return sendApiError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Invalid profile input.",
-        zodErrorToFields(parsed.error),
-      );
-    }
-
-    return upsertProfile(user.id, parsed.data);
-  });
+  registerProfileRoutes(app, env, deps);
+  registerPreferenceRoutes(app, env);
+  registerMatchingRoutes(app, env, deps);
+  registerChatRoutes(app, env, deps);
+  registerBlockRoutes(app, env);
+  registerAccountRoutes(app, env, deps);
 }
