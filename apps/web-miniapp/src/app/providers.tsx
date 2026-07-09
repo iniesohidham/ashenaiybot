@@ -55,12 +55,28 @@ export function Providers({ children }: { children: ReactNode }) {
 
     init();
 
-    themeParams.mount.ifAvailable();
-    themeParams.bindCssVars.ifAvailable();
-    backButton.mount.ifAvailable();
+    // themeParams.mount() (async) races bindCssVars()/backgroundColor() if
+    // not awaited — mountSync() is the documented synchronous alternative
+    // and avoids that entirely. A failure anywhere here (an unsupported
+    // client, mount failing) must not leave the app stuck on nothing: catch
+    // it and still render with fallback colors rather than staying blank
+    // forever — state must always reach "ready" or "unavailable".
+    try {
+      if (themeParams.mountSync.isAvailable()) {
+        themeParams.mountSync();
+      }
+      if (themeParams.bindCssVars.isAvailable()) {
+        themeParams.bindCssVars();
+      }
+      if (backButton.mount.isAvailable()) {
+        backButton.mount();
+      }
 
-    const dark = isColorDark(themeParams.backgroundColor());
-    document.documentElement.dataset.theme = dark ? "dark" : "light";
+      const dark = isColorDark(themeParams.backgroundColor());
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+    } catch (err) {
+      console.error("[Providers] Telegram theme init failed, using fallback colors", err);
+    }
 
     setInitDataRaw(initData.raw() ?? null);
     setState("ready");
