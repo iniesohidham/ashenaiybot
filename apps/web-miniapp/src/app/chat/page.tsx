@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { motion } from "motion/react";
+import { Camera, Mic, Send, Square } from "lucide-react";
 import { REPORT_REASON_OPTIONS } from "@ashena/shared";
 import { api, type PublicMessageDto } from "@/lib/api";
 import { useAuthedObjectUrl, AuthedImg } from "@/components/authed-media";
@@ -84,17 +86,20 @@ function MessageBubble({ message }: { message: PublicMessageDto }) {
 
   return (
     <div className={cn("flex", message.fromSelf ? "justify-start" : "justify-end")}>
-      <div
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
         className={cn(
-          "max-w-[75%] rounded-2xl px-3 py-2 text-sm",
-          message.fromSelf ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground",
+          "max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-sm",
+          message.fromSelf ? "bg-primary text-primary-foreground rounded-ee-md" : "bg-secondary text-secondary-foreground rounded-es-md",
         )}
       >
         {message.type === "text" && <p className="whitespace-pre-wrap">{message.text}</p>}
         {message.type === "photo" && (mediaUrl ? <AuthedImg path={message.mediaUrl!} alt="" className="max-h-64 rounded-lg" /> : null)}
         {message.type === "voice" && mediaUrl && <audio controls src={mediaUrl} className="max-w-full" />}
         {message.type === "sticker" && (mediaUrl ? <AuthedImg path={message.mediaUrl!} alt="" className="h-24 w-24" /> : null)}
-      </div>
+      </motion.div>
     </div>
   );
 }
@@ -238,16 +243,18 @@ export default function ChatPage() {
             e.target.value = "";
           }}
         />
-        <Button type="button" variant="ghost" size="icon" onClick={() => photoInputRef.current?.click()}>
-          📷
+        <Button type="button" variant="ghost" size="icon" className="shrink-0 rounded-full" onClick={() => photoInputRef.current?.click()} aria-label="ارسال عکس">
+          <Camera className="h-5 w-5" />
         </Button>
         <Button
           type="button"
           variant={recording ? "destructive" : "ghost"}
           size="icon"
+          className="shrink-0 rounded-full"
           onClick={() => (recording ? stopRecording() : void startRecording())}
+          aria-label={recording ? "توقف ضبط" : "ضبط صدا"}
         >
-          🎙️
+          {recording ? <Square className="h-4 w-4 fill-current" /> : <Mic className="h-5 w-5" />}
         </Button>
         <input
           value={text}
@@ -256,14 +263,17 @@ export default function ChatPage() {
             if (e.key === "Enter" && text.trim()) sendTextMutation.mutate(text.trim());
           }}
           placeholder={CHAT_INPUT_PLACEHOLDER}
-          className="h-11 flex-1 rounded-lg border border-input bg-transparent px-3 text-sm"
+          className="h-11 flex-1 rounded-sm border border-input bg-transparent px-3 text-sm transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
         <Button
           type="button"
+          size="icon"
+          className="shrink-0 rounded-full"
           disabled={!text.trim() || sendTextMutation.isPending}
           onClick={() => text.trim() && sendTextMutation.mutate(text.trim())}
+          aria-label={CHAT_SEND_LABEL}
         >
-          {CHAT_SEND_LABEL}
+          <Send className="h-5 w-5 rtl:-scale-x-100" />
         </Button>
       </div>
 

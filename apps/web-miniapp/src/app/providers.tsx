@@ -36,6 +36,19 @@ export function Providers({ children }: { children: ReactNode }) {
     try {
       retrieveLaunchParams();
     } catch {
+      // Dev-only visual QA bypass: opening this app outside Telegram is
+      // normally a dead end (see the "unavailable" branch below, which is
+      // the real US-6.1 behavior and must stay the default). NODE_ENV
+      // itself gates this out of any production build regardless of env
+      // vars, and NEXT_PUBLIC_DEV_INIT_DATA (a freshly-signed mock initData
+      // string, see apps/web-miniapp/scripts/mock-init-data.ts) must also
+      // be explicitly set for it to activate — plain `pnpm dev` with no
+      // such var still shows the real outside-Telegram screen.
+      if (process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEV_INIT_DATA) {
+        setInitDataRaw(process.env.NEXT_PUBLIC_DEV_INIT_DATA);
+        setState("ready");
+        return;
+      }
       setState("unavailable");
       return;
     }

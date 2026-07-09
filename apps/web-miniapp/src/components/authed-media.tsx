@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getInitDataRaw } from "@/lib/telegram";
+import { cn } from "@/lib/utils";
 
 /**
  * Every media-serving route (profile photos, chat photo/voice/sticker) sits
@@ -46,5 +47,5 @@ export function useAuthedObjectUrl(path: string | null): string | null {
 export function AuthedImg({ path, alt, className }: { path: string; alt: string; className?: string }) {
   const url = useAuthedObjectUrl(path);
   if (!url) return null;
-  return <img src={url} alt={alt} className={className} />;
+  return <img src={url} alt={alt} className={cn("[animation:fade-in_300ms_ease-out]", className)} />;
 }

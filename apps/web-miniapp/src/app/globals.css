@@ -47,7 +47,19 @@
   --accent-foreground: var(--gray-900);
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --radius: 0.75rem;
+  --warning: #fef3c7;
+  --warning-foreground: #78350f;
+
+  /* Glass surfaces (bottom nav) — derived from the live --card/--foreground
+   * tokens via color-mix() rather than a hardcoded translucent color, so
+   * blur still tracks whatever theme color the user's actual Telegram
+   * client reports. Light gets more air; dark gets a higher opacity floor
+   * (scrolling content loses legibility under glass fastest in dark mode —
+   * the same lesson Apple's own Liquid Glass took from its 2025 launch). */
+  --glass-bg: color-mix(in srgb, var(--card) 78%, transparent);
+  --glass-border: color-mix(in srgb, var(--foreground) 8%, transparent);
+
+  --radius: 1.25rem;
 }
 
 /*
@@ -73,6 +85,10 @@
     --background: var(--tg-theme-bg-color, #0a0a0a);
     --card: var(--tg-theme-secondary-bg-color, #18181b);
     --destructive: #f87171;
+    --warning: #451a03;
+    --warning-foreground: #fcd34d;
+    --glass-bg: color-mix(in srgb, var(--card) 85%, transparent);
+    --glass-border: color-mix(in srgb, var(--foreground) 12%, transparent);
   }
 }
 
@@ -91,6 +107,10 @@
   --background: var(--tg-theme-bg-color, #0a0a0a);
   --card: var(--tg-theme-secondary-bg-color, #18181b);
   --destructive: #f87171;
+  --warning: #451a03;
+  --warning-foreground: #fcd34d;
+  --glass-bg: color-mix(in srgb, var(--card) 85%, transparent);
+  --glass-border: color-mix(in srgb, var(--foreground) 12%, transparent);
 }
 
 @theme inline {
@@ -114,6 +134,10 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-glass-bg: var(--glass-bg);
+  --color-glass-border: var(--glass-border);
 
   --color-gray-50: var(--gray-50);
   --color-gray-100: var(--gray-100);
@@ -127,10 +151,76 @@
   --color-gray-900: var(--gray-900);
   --color-gray-950: var(--gray-950);
 
-  --radius-sm: calc(var(--radius) - 0.375rem);
-  --radius-md: calc(var(--radius) - 0.125rem);
+  /* One lever (--radius) drives the whole shape rhythm — every tier below
+   * is relative to it, not a hardcoded pixel value, so nudging --radius
+   * still cascades everywhere. --radius-2xl/3xl are defined explicitly
+   * here (previously missing) — without them Tailwind's rounded-2xl/3xl
+   * utilities silently fall back to static built-in values, decoupled
+   * from this token system, which is why the swipe card's rounded-2xl
+   * used to "coincidentally" match rounded-xl's old 16px value. */
+  --radius-xs: calc(var(--radius) - 0.75rem);
+  --radius-sm: calc(var(--radius) - 0.625rem);
+  --radius-md: calc(var(--radius) - 0.375rem);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 0.25rem);
+  --radius-2xl: calc(var(--radius) + 0.5rem);
+  --radius-3xl: calc(var(--radius) + 0.75rem);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Dialog/AlertDialog enter-exit — plain CSS keyed off Radix's own
+ * data-state attribute, no animation library needed for a modal that's
+ * only ever mounted/unmounted, never dragged or velocity-driven. */
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+@keyframes dialog-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+}
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.dialog-content[data-state="open"] {
+  animation: dialog-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dialog-content[data-state="closed"] {
+  animation: dialog-out 150ms cubic-bezier(0.4, 0, 1, 1);
+}
+.dialog-overlay[data-state="open"] {
+  animation: overlay-in 200ms ease-out;
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .backdrop-blur-xl {
+    background: var(--card);
+  }
 }
 
 body {

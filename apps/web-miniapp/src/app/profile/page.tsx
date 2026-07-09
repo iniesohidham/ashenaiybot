@@ -84,7 +84,7 @@ export default function ProfilePage() {
 
   return (
     <main className="flex flex-col gap-4 p-4">
-      <h1 className="text-lg font-semibold">{PROFILE_TITLE}</h1>
+      <h1 className="text-2xl font-bold text-foreground">{PROFILE_TITLE}</h1>
 
       <Card>
         <CardHeader>
@@ -130,7 +130,7 @@ export default function ProfilePage() {
                     type="button"
                     onClick={() => field.onChange(option.value)}
                     className={cn(
-                      "flex-1 rounded-lg border border-border px-3 py-2 text-sm",
+                      "flex-1 rounded-full border border-border px-3 py-2 text-sm transition-colors",
                       field.value === option.value && "border-primary bg-primary text-primary-foreground",
                     )}
                   >
@@ -147,7 +147,7 @@ export default function ProfilePage() {
           <input
             id="birthDate"
             type="date"
-            className="h-11 rounded-lg border border-input bg-transparent px-3 text-sm"
+            className="h-11 rounded-sm border border-input bg-transparent px-3 text-sm transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             {...register("birthDate")}
           />
           {errors.birthDate && <p className="text-xs text-destructive">{errors.birthDate.message}</p>}

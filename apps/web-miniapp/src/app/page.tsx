@@ -3,6 +3,8 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { motion } from "motion/react";
+import { Heart, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { SwipeCard, type SwipeCardHandle } from "@/components/swipe-card";
 import { Button } from "@/components/ui/button";
@@ -87,12 +89,23 @@ export default function SwipeDeckPage() {
         <>
           {/* key={candidate.id} forces a fresh SwipeCard instance per candidate — without it, the same instance's internal drag/exit-animation state (set mid-swipe) would carry over into the next card, leaving it rendered off-screen or pre-opacity'd instead of centered and interactive. */}
           <SwipeCard key={data.candidate.id} ref={cardRef} candidate={data.candidate} onSwiped={(action) => swipeMutation.mutate(action)} />
-          <div className="flex justify-center gap-4">
-            <Button variant="outline" size="lg" onClick={() => handleAction("pass")} aria-label={SWIPE_PASS_LABEL}>
-              ✕ {SWIPE_PASS_LABEL}
+          <div className="flex justify-center gap-6">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-16 w-16 rounded-full border-2 shadow-md"
+              onClick={() => handleAction("pass")}
+              aria-label={SWIPE_PASS_LABEL}
+            >
+              <X className="h-7 w-7 text-destructive" strokeWidth={2.5} />
             </Button>
-            <Button size="lg" onClick={() => handleAction("like")} aria-label={SWIPE_LIKE_LABEL}>
-              ♥ {SWIPE_LIKE_LABEL}
+            <Button
+              size="icon"
+              className="h-16 w-16 rounded-full shadow-md"
+              onClick={() => handleAction("like")}
+              aria-label={SWIPE_LIKE_LABEL}
+            >
+              <Heart className="h-7 w-7 fill-current" strokeWidth={2.5} />
             </Button>
           </div>
         </>
@@ -104,9 +117,17 @@ export default function SwipeDeckPage() {
       )}
 
       <Dialog open={matchedId !== null} onOpenChange={(open) => !open && setMatchedId(null)}>
-        <DialogContent>
-          <DialogTitle>{SWIPE_MATCH_TITLE}</DialogTitle>
-          <DialogDescription>{SWIPE_MATCH_BODY}</DialogDescription>
+        <DialogContent className="text-center">
+          <motion.div
+            initial={{ scale: 0.5, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20, delay: 0.05 }}
+            className="mx-auto mb-2 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10"
+          >
+            <Heart className="h-8 w-8 fill-primary text-primary" />
+          </motion.div>
+          <DialogTitle className="text-center text-xl">{SWIPE_MATCH_TITLE}</DialogTitle>
+          <DialogDescription className="text-center">{SWIPE_MATCH_BODY}</DialogDescription>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMatchedId(null)}>
               {SWIPE_KEEP_BROWSING_LABEL}

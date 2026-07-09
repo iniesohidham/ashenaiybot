@@ -11,10 +11,10 @@ export const AlertDialogTrigger = AlertDialogPrimitive.Trigger;
 export function AlertDialogContent({ className, children, ...props }: AlertDialogPrimitive.AlertDialogContentProps) {
   return (
     <AlertDialogPrimitive.Portal>
-      <AlertDialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
+      <AlertDialogPrimitive.Overlay className="dialog-overlay fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
       <AlertDialogPrimitive.Content
         className={cn(
-          "fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card p-4 text-card-foreground shadow-lg",
+          "dialog-content fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-border bg-card p-5 text-card-foreground shadow-xl",
           className,
         )}
         {...props}
