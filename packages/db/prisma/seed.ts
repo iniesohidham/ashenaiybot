@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { faker } from "@faker-js/faker";
 import { Gender, type User } from "@prisma/client";
 import { calculateAge, defaultAgeRange, defaultInterestedInGenders, type GenderValue } from "@ashena/shared";
@@ -116,9 +117,11 @@ async function seedMatches(users: User[]): Promise<void> {
 }
 
 /**
- * EPIC 7 (Admin Panel) owns real admin auth/login — this row exists purely so
- * BanRecord.issuedByAdminId has a valid FK to seed/test against before then.
- * The passwordHash is an obvious, unusable placeholder, not a real credential.
+ * This "system" account exists purely so BanRecord.issuedByAdminId/
+ * Report.resolvedByAdminId etc. have a valid FK to seed/test against for
+ * automated (non-human-triggered) seed data below — its passwordHash is a
+ * deliberately unusable placeholder, not a real credential, and it's never
+ * meant to log in.
  */
 async function seedSystemAdmin(): Promise<void> {
   await prisma.adminUser.upsert({
@@ -130,6 +133,38 @@ async function seedSystemAdmin(): Promise<void> {
       role: "admin",
     },
   });
+}
+
+const DEFAULT_SEED_ADMIN_PASSWORD = "ChangeMe123!";
+
+/**
+ * EPIC 7 (Admin Panel) — real, loggable-in accounts for exercising the
+ * Admin Panel locally (unlike seedSystemAdmin's placeholder above). Password
+ * comes from SEED_ADMIN_PASSWORD/SEED_MODERATOR_PASSWORD if set, otherwise
+ * a documented dev-only default — never rely on the default outside a local
+ * dev/staging seed.
+ */
+async function seedRealAdminUsers(): Promise<void> {
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? DEFAULT_SEED_ADMIN_PASSWORD;
+  const moderatorPassword = process.env.SEED_MODERATOR_PASSWORD ?? DEFAULT_SEED_ADMIN_PASSWORD;
+
+  await prisma.adminUser.upsert({
+    where: { username: "admin" },
+    update: {},
+    create: { username: "admin", passwordHash: await bcrypt.hash(adminPassword, 10), role: "admin" },
+  });
+  await prisma.adminUser.upsert({
+    where: { username: "moderator" },
+    update: {},
+    create: { username: "moderator", passwordHash: await bcrypt.hash(moderatorPassword, 10), role: "moderator" },
+  });
+
+  if (!process.env.SEED_ADMIN_PASSWORD || !process.env.SEED_MODERATOR_PASSWORD) {
+    console.warn(
+      `[seed] admin/moderator seeded with the default dev password ("${DEFAULT_SEED_ADMIN_PASSWORD}") — ` +
+        "set SEED_ADMIN_PASSWORD/SEED_MODERATOR_PASSWORD before seeding anywhere but a local dev/staging DB.",
+    );
+  }
 }
 
 /**
@@ -279,10 +314,12 @@ async function main(): Promise<void> {
   await seedChatSession(users);
   await seedPendingPhoto(users);
   await seedBanAppeal(users, systemAdmin.id);
+  await seedRealAdminUsers();
   console.log(
     `Seeded ${users.length} users, 5 matches (3 active/2 ended), 1 pending + 1 resolved report, ` +
       `1 system admin, 3 banned patterns, 1 active chat session with 2 messages, ` +
-      `1 pending photo review, 1 banned user with a pending appeal.`,
+      `1 pending photo review, 1 banned user with a pending appeal, ` +
+      `2 Admin Panel logins ("admin"/"moderator", see SEED_ADMIN_PASSWORD/SEED_MODERATOR_PASSWORD).`,
   );
 }
 

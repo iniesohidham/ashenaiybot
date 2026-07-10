@@ -10,8 +10,10 @@ import {
   type ReportReason,
   type ReportResolutionAction,
   type ReportSeverity,
+  type User,
 } from "@ashena/db";
 import {
+  DEFAULT_BAN_DURATION_DAYS,
   MESSAGE_RATE_LIMIT_PER_MINUTE,
   SPAM_DETECTION_WINDOW_MINUTES,
   SPAM_DUPLICATE_SESSION_THRESHOLD,
@@ -104,8 +106,13 @@ export function listFlaggedMessages(limit = 50): Promise<
   });
 }
 
-/** Test-only: forces the next checkText call to reload from the DB. */
-export function _resetPatternCacheForTests(): void {
+/**
+ * Forces the next checkText call to reload from the DB — used by tests, and
+ * by EPIC 7's banned-pattern CRUD (modules/admin/service.ts) after an
+ * add/edit/remove so US-7.5's "changes take effect... without restarting
+ * the backend" AC doesn't have to wait out the full 60s TTL.
+ */
+export function invalidatePatternCache(): void {
   patternCache = null;
 }
 
@@ -181,6 +188,10 @@ export async function listReportQueue(limit = 50): Promise<ReportQueueEntry[]> {
  * here. `no_action`/`warn` only update the Report row; actually delivering a
  * "warn" message to the user is EPIC 7's caller's job (no warning-copy
  * channel exists yet), same deferred-notification pattern as rejectPhoto().
+ * Returns null for an unknown reportId (a plain `findUnique`, not
+ * `findUniqueOrThrow`) — an adversarial review caught that a stale/mistyped
+ * id previously reached the throwing variant directly, surfacing as a raw
+ * 500 instead of a clean 404 from the route.
  */
 export async function resolveReport(
   redis: Redis,
@@ -188,18 +199,19 @@ export async function resolveReport(
   adminId: string,
   action: ReportResolutionAction,
   banReason?: string,
-): Promise<Report> {
-  const report = await prisma.report.findUniqueOrThrow({ where: { id: reportId } });
+): Promise<Report | null> {
+  const report = await prisma.report.findUnique({ where: { id: reportId } });
+  if (!report) return null;
   // Guards against double-resolving the same report (e.g. two moderators
   // both opening it before either acts) — without this, both calls would
-  // pass findUniqueOrThrow, potentially create two BanRecords, and the
+  // both see status "pending", potentially create two BanRecords, and the
   // second update would silently overwrite the first's
   // resolvedByAdminId/resolutionAction.
   if (report.status !== "pending") return report;
 
   if (action === "temporary_ban" || action === "permanent_ban") {
     const expiresAt =
-      action === "temporary_ban" ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) : null;
+      action === "temporary_ban" ? new Date(Date.now() + DEFAULT_BAN_DURATION_DAYS * 24 * 60 * 60 * 1000) : null;
     await banUser(redis, report.reportedUserId, banReason ?? `report:${reportId}`, action === "temporary_ban" ? "temporary" : "permanent", expiresAt, adminId);
   }
 
@@ -380,6 +392,27 @@ export function getLatestBanRecord(userId: string): Promise<BanRecord | null> {
 }
 
 /**
+ * US-7.4's "admin can reverse a permanent ban" AC (admin role only — gated
+ * at the route level, same as everywhere else identity/role checks live).
+ * Only reactivates a user whose status is currently `banned` — an adversarial
+ * review caught a real gap in an earlier version of this function that
+ * unconditionally set status to `active`: an admin could reverse-ban (or a
+ * moderator could resolve a pending BanAppeal as "reversed") a user who had
+ * been soft-deleted (modules/users/service.ts's deleteAccount()) *after* the
+ * ban but before the reversal was actioned, silently resurrecting a
+ * deliberately-deleted account. The conditional `updateMany` makes "was this
+ * user actually banned right now" atomic with the write, rather than a
+ * separate read-then-write with a race window. Returns null if the user
+ * wasn't currently banned (already reactivated, or since deleted) — the
+ * caller maps that to a 409, not a silent success.
+ */
+export async function reverseBan(userId: string): Promise<User | null> {
+  const result = await prisma.user.updateMany({ where: { id: userId, status: "banned" }, data: { status: "active" } });
+  if (result.count === 0) return null;
+  return prisma.user.findUniqueOrThrow({ where: { id: userId } });
+}
+
+/**
  * US-5.4's AC: "when a temporary ban's expiresAt passes, status
  * automatically reverts to active without manual intervention." Only
  * reverts users whose *most recent* ban is a temporary one that has
@@ -446,13 +479,23 @@ export function listPendingBanAppeals(limit = 50): Promise<BanAppeal[]> {
  * ban: only reactivates if this appeal's BanRecord is still the user's
  * *current* one (getLatestBanRecord match) — if a fresh ban was issued
  * after this appeal was filed, resolving the old appeal must not silently
- * lift the new one.
+ * lift the new one. Also guarded (via the conditional updateMany, same
+ * technique reverseBan() uses) against reactivating a user who was
+ * soft-deleted after the ban but before this appeal got resolved — an
+ * adversarial review caught this exact race with the plain `update()` this
+ * used to call, which would have unconditionally flipped a deleted account
+ * back to `active`. Returns null for an unknown appealId (checked explicitly
+ * rather than letting `update()` throw P2025) so the route can respond with
+ * a clean 404 instead of a raw 500.
  */
 export async function resolveBanAppeal(
   appealId: string,
   adminId: string,
   outcome: Extract<BanAppeal["status"], "upheld" | "reversed">,
-): Promise<BanAppeal> {
+): Promise<BanAppeal | null> {
+  const existing = await prisma.banAppeal.findUnique({ where: { id: appealId }, select: { id: true } });
+  if (!existing) return null;
+
   const appeal = await prisma.banAppeal.update({
     where: { id: appealId },
     data: { status: outcome, resolvedAt: new Date(), resolvedByAdminId: adminId },
@@ -461,7 +504,7 @@ export async function resolveBanAppeal(
   if (outcome === "reversed") {
     const latestBan = await getLatestBanRecord(appeal.userId);
     if (latestBan?.id === appeal.banRecordId) {
-      await prisma.user.update({ where: { id: appeal.userId }, data: { status: "active" } });
+      await prisma.user.updateMany({ where: { id: appeal.userId, status: "banned" }, data: { status: "active" } });
     }
   }
 

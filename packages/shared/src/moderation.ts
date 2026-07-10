@@ -20,6 +20,18 @@ export function isReportReasonValue(value: string): value is ReportReasonValue {
   return REPORT_REASON_VALUES.has(value);
 }
 
+// EPIC 5/7 — same pattern as ReportReasonValue above, for the other fixed
+// two-value enum this domain has (BannedPattern.severity, Report.severity).
+// Added in EPIC 7 so the banned-pattern management UI's severity dropdown
+// can't drift from what the backend accepts, the same reason
+// ReportReasonValue exists.
+export type ReportSeverityValue = "normal" | "high";
+
+export const REPORT_SEVERITY_OPTIONS: ReadonlyArray<{ value: ReportSeverityValue; labelFa: string }> = [
+  { value: "normal", labelFa: "عادی" },
+  { value: "high", labelFa: "شدید" },
+];
+
 // EPIC 5 (US-5.6) — message-level rate limiting & spam detection constants.
 // Mirrors matching.ts's SWIPE_RATE_LIMIT_PER_MINUTE: a plain shared constant
 // rather than a DB-backed/env-configurable value, consistent with how the

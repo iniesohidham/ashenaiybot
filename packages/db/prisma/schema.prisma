@@ -98,6 +98,16 @@ enum BanType {
   permanent
 }
 
+// EPIC 7 (US-7.7) — a durable record of a broadcast send, since a BullMQ
+// job's own return value isn't queryable later from a different process
+// (web-admin polling for delivery counts after the request that queued it
+// has already returned).
+enum BroadcastStatus {
+  pending
+  sending
+  completed
+}
+
 model User {
   id            String     @id @default(cuid())
   telegramId    BigInt     @unique
@@ -285,6 +295,26 @@ model AdminUser {
   issuedBans      BanRecord[]
   resolvedReports Report[]    @relation("ReportResolvedBy")
   resolvedAppeals BanAppeal[] @relation("BanAppealResolvedBy")
+  broadcastsSent  Broadcast[]
+}
+
+// EPIC 7 (US-7.7) — one row per broadcast send. totalTargeted is snapshotted
+// at enqueue time (the audience the admin actually confirmed sending to);
+// successCount/failureCount are updated incrementally by the worker as
+// ashena-broadcast's send-broadcast job works through the list, so
+// web-admin can poll this row for live progress rather than needing to hold
+// a request open for however long the whole send takes.
+model Broadcast {
+  id              String          @id @default(cuid())
+  message         String
+  createdByAdminId String
+  createdByAdmin  AdminUser       @relation(fields: [createdByAdminId], references: [id])
+  status          BroadcastStatus @default(pending)
+  totalTargeted   Int
+  successCount    Int             @default(0)
+  failureCount    Int             @default(0)
+  createdAt       DateTime        @default(now())
+  completedAt     DateTime?
 }
 
 // EPIC 5 (US-5.1, minimal slice) — banned-word/pattern list, editable without a

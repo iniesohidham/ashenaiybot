@@ -2,10 +2,18 @@ import { Redis } from "ioredis";
 import { Queue, Worker, type Job } from "bullmq";
 import { Api } from "grammy";
 import { prisma } from "@ashena/db";
+import { BROADCAST_SEND_INTERVAL_MS } from "@ashena/shared";
 import { loadEnv } from "./env.js";
 import { cleanupIdleSessions } from "./modules/chat/service.js";
 import { revertExpiredBans } from "./modules/moderation/service.js";
 import { findUserById } from "./modules/users/service.js";
+import {
+  findBroadcastById,
+  incrementBroadcastCounters,
+  markBroadcastCompleted,
+  markBroadcastSending,
+} from "./modules/admin/service.js";
+import { BROADCAST_QUEUE_NAME, SEND_BROADCAST_JOB, type SendBroadcastJobData } from "./lib/broadcastQueue.js";
 import { CHAT_ENDED_NEXT_PROMPT, IDLE_TIMEOUT_MESSAGE } from "./bot/copy.js";
 import { chatEndedKeyboard, chatToolbarRemove } from "./bot/keyboards.js";
 
@@ -97,6 +105,67 @@ async function main(): Promise<void> {
     }
   }
 
+  /** Same log-and-give-up-after-3-attempts shape as sendWithRetry above, but returns success/failure so the caller can count it exactly once — a plain sendWithRetry swallows the final outcome, which US-7.7's delivery-count AC needs. */
+  async function sendBroadcastMessage(chatId: string, text: string): Promise<boolean> {
+    const attempts = 3;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        await api.sendMessage(chatId, text);
+        return true;
+      } catch (err) {
+        if (attempt === attempts) {
+          console.error(`[worker] broadcast send to ${chatId} failed after ${attempts} attempts`, err);
+          return false;
+        }
+        await delay(300 * attempt);
+      }
+    }
+    return false;
+  }
+
+  /**
+   * EPIC 7 (US-7.7) — sends a queued broadcast to every currently-active
+   * user, spaced by BROADCAST_SEND_INTERVAL_MS (not sent all at once, per
+   * the AC) and updating the durable Broadcast row's counters as it goes so
+   * web-admin can poll live progress. The target list is fetched fresh here
+   * (not carried in the job payload) so a user who's banned/deleted between
+   * enqueue and send doesn't get a message.
+   *
+   * Known limitation (accepted, not fixed here — flagged by an adversarial
+   * review): there's no per-recipient delivery record, only aggregate
+   * counters. If the worker process dies mid-send and BullMQ's stalled-job
+   * recovery redelivers the job, this re-sends to users who already got the
+   * message on the prior attempt (no cursor/checkpoint). The guard below
+   * only closes the *more likely* failure mode — a job redelivered after it
+   * already reached "completed" (e.g. a lock-renewal hiccup right at the
+   * end) — which would otherwise resend the entire broadcast from scratch.
+   * Full per-recipient idempotency would need a new join table tracking
+   * delivery per (broadcast, user); not worth the scope for how rare a
+   * mid-send crash is and how low-severity a duplicate announcement is.
+   */
+  async function runSendBroadcast(broadcastId: string): Promise<void> {
+    const broadcast = await findBroadcastById(broadcastId);
+    if (!broadcast) {
+      console.error(`[worker] send-broadcast job for unknown broadcast ${broadcastId}`);
+      return;
+    }
+    if (broadcast.status === "completed") {
+      console.warn(`[worker] send-broadcast job for already-completed broadcast ${broadcastId}, skipping`);
+      return;
+    }
+    await markBroadcastSending(broadcastId);
+
+    const activeUsers = await prisma.user.findMany({ where: { status: "active" }, select: { telegramId: true } });
+    for (const { telegramId } of activeUsers) {
+      const delivered = await sendBroadcastMessage(telegramId.toString(), broadcast.message);
+      await incrementBroadcastCounters(broadcastId, delivered ? "success" : "failure");
+      await delay(BROADCAST_SEND_INTERVAL_MS);
+    }
+
+    await markBroadcastCompleted(broadcastId);
+    console.log(`[worker] broadcast ${broadcastId} completed: ${activeUsers.length} target(s)`);
+  }
+
   const worker = new Worker(
     MAINTENANCE_QUEUE,
     async (job: Job) => {
@@ -109,18 +178,33 @@ async function main(): Promise<void> {
     { connection: bullConnection },
   );
 
+  const broadcastWorker = new Worker<SendBroadcastJobData>(
+    BROADCAST_QUEUE_NAME,
+    async (job) => {
+      if (job.name === SEND_BROADCAST_JOB) {
+        await runSendBroadcast(job.data.broadcastId);
+      }
+    },
+    { connection: bullConnection },
+  );
+
   worker.on("failed", (job, err) => {
     console.error(`[worker] job ${job?.name ?? "unknown"} failed`, err);
+  });
+  broadcastWorker.on("failed", (job, err) => {
+    console.error(`[worker] broadcast job ${job?.name ?? "unknown"} failed`, err);
   });
 
   console.log(
     "[worker] connected to redis and postgres; idle-session-cleanup " +
       `(every ${IDLE_CLEANUP_INTERVAL_MS / 60_000}min) and ban-expiry-sweep ` +
-      `(every ${BAN_EXPIRY_INTERVAL_MS / 60_000}min) jobs scheduled`,
+      `(every ${BAN_EXPIRY_INTERVAL_MS / 60_000}min) jobs scheduled; ` +
+      "send-broadcast worker ready",
   );
 
   const shutdown = async (): Promise<void> => {
     await worker.close();
+    await broadcastWorker.close();
     await queue.close();
     await bullConnection.quit();
     await redis.quit();
