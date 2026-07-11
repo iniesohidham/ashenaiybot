@@ -1,0 +1,44 @@
+# EPIC 8 (US-8.2) — "basic alerting rules ... for critical thresholds (e.g.
+# error rate spike, queue backlog growing unbounded)" per the AC's own
+# wording. Deliberately minimal (3 rules, generous thresholds/durations) —
+# this is the mechanism the AC asks for, not a tuned on-call runbook; revisit
+# thresholds once real production traffic gives a baseline to tune against.
+#
+# NOTE: alertmanager.yml's receiver is a documented placeholder (no real
+# notification channel configured yet — see that file's own comment). These
+# rules will fire and show up in Prometheus/Alertmanager's own UI, but won't
+# page/message anyone until a real receiver (e.g. Telegram, email) is wired
+# in — flagged as the same category of "mechanism shipped, integration is
+# follow-up" pattern CLAUDE.md already documents for banUser()/etc.
+groups:
+  - name: ashena-basic-alerts
+    rules:
+      - alert: BotApiDown
+        expr: up{job="bot-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "bot-api is down"
+          description: "Prometheus has not been able to scrape apps/bot-api's /metrics for 2 minutes."
+
+      - alert: HighHttpErrorRate
+        expr: |
+          sum(rate(http_request_duration_seconds_count{status_code=~"5.."}[5m]))
+            /
+          sum(rate(http_request_duration_seconds_count[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HTTP 5xx error rate above 5%"
+          description: "More than 5% of requests to bot-api have returned a 5xx status over the last 5 minutes."
+
+      - alert: BullMQQueueBacklogGrowing
+        expr: bullmq_queue_depth{state="waiting"} > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "BullMQ queue backlog is growing"
+          description: "The {{ $labels.queue }} queue has had more than 100 waiting jobs for 10 minutes — the worker may be stuck or falling behind."

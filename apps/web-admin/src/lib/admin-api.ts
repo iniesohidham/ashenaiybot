@@ -176,6 +176,10 @@ export interface UserDetailDto {
     birthDate: string | null;
     ageAttestedAt: string | null;
     createdAt: string;
+    // EPIC 8 (US-8.4)
+    lastActiveAt: string | null;
+    notificationsOptedOut: boolean;
+    lastNudgeSentAt: string | null;
   };
   profile: ProfileDto | null;
   matchCount: number;
@@ -197,6 +201,9 @@ export interface DailyTrendEntryDto {
   dau: number;
   newSignups: number;
   matchesCreated: number;
+  // EPIC 8 (US-8.3) — new trend series backed by the Event table.
+  chatsEnded: number;
+  reportsSubmitted: number;
 }
 
 export interface DashboardMetricsDto {
@@ -204,6 +211,8 @@ export interface DashboardMetricsDto {
     dau: number;
     newSignups: number;
     matchesCreated: number;
+    chatsEnded: number;
+    reportsSubmitted: number;
     activeSessions: number;
     pendingReports: number;
     pendingPhotos: number;

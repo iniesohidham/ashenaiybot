@@ -17,6 +17,9 @@ export const updateAccountSchema = z.object({
     .refine((value) => new Date(value).getTime() <= Date.now(), { message: "Birth date cannot be in the future." })
     .refine((value) => isAdult(new Date(value)), { message: "Must be 18 or older." })
     .optional(),
+  // EPIC 8 (US-8.4) — the Mini App Settings screen's opt-out toggle, same
+  // field the bot's own settings menu writes via CB.settingsToggleNotifications.
+  notificationsOptedOut: z.boolean().optional(),
 });
 
 export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;

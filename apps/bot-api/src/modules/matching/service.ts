@@ -19,6 +19,7 @@ import {
   SWIPE_RATE_LIMIT_PER_MINUTE,
   type GenderValue,
 } from "@ashena/shared";
+import { trackEvent } from "../events/service.js";
 
 // --- Preferences (US-3.1) -----------------------------------------------
 
@@ -272,7 +273,7 @@ export async function recordSwipeAndCheckMatch(
 
   const [userAId, userBId] = canonicalUserPair(actorId, targetId);
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${userAId} || ':' || ${userBId}))`;
 
     const reciprocal = await tx.swipeAction.findUnique({
@@ -297,4 +298,18 @@ export async function recordSwipeAndCheckMatch(
       throw err;
     }
   });
+
+  // EPIC 8 (US-8.3) — outside the transaction, fire-and-forget (not
+  // awaited: trackEvent() never throws by its own contract, so awaiting it
+  // here would only add pure latency to the swipe/match response path for
+  // no correctness benefit — Node keeps the process alive until the
+  // underlying write completes regardless). The advisory lock above
+  // already guarantees at most one of the two racing calls gets a non-null
+  // match, so this fires exactly once per match. userId is left null (a
+  // match involves two users, not one) — both ids live in metadata instead.
+  if (result.match) {
+    void trackEvent("match_created", null, { matchId: result.match.id, userAId, userBId });
+  }
+
+  return result;
 }

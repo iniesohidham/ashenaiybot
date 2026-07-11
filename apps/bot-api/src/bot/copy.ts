@@ -288,3 +288,15 @@ export const BAN_APPEAL_ALREADY_SUBMITTED_MESSAGE =
 // telegramId every time, so re-onboarding a deleted account isn't actually
 // possible yet; the copy must not promise something the code doesn't do).
 export const ACCOUNT_DELETED_MESSAGE = "این حساب حذف شده و دیگه قابل استفاده نیست.";
+
+// EPIC 8 (US-8.4) — idle/inactivity re-engagement. The nudge itself is
+// deliberately low-key: no "we miss you"/"come back!" urgency language and
+// no mention of how long it's been, per the AC's own "not spammy, no
+// guilt-tripping" wording — it states an observation and an invitation,
+// nothing more.
+export const INACTIVITY_NUDGE_MESSAGE =
+  "مدتیه سر نزدی 🙂 هر وقت حس‌وحالش رو داشتی، آشنایی همیشه بازه.";
+export const SETTINGS_DISABLE_NOTIFICATIONS_LABEL = "خاموش کردن یادآوری‌ها";
+export const SETTINGS_ENABLE_NOTIFICATIONS_LABEL = "روشن کردن یادآوری‌ها";
+export const SETTINGS_NOTIFICATIONS_DISABLED_MESSAGE = "یادآوری‌های غیرفعالی خاموش شد.";
+export const SETTINGS_NOTIFICATIONS_ENABLED_MESSAGE = "یادآوری‌های غیرفعالی روشن شد.";

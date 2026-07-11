@@ -2,6 +2,7 @@ import type { Api } from "grammy";
 import type { Match } from "@ashena/db";
 import { findUserById } from "../modules/users/service.js";
 import { otherPartyId } from "../modules/chat/service.js";
+import { createLogger } from "../lib/logger.js";
 import {
   CHAT_ENDED_NEXT_PROMPT,
   CHAT_PARTNER_LEFT_MESSAGE,
@@ -9,6 +10,12 @@ import {
   MATCH_FOUND_MESSAGE,
 } from "./copy.js";
 import { chatEndedKeyboard, chatToolbarKeyboard, chatToolbarRemove, matchFoundKeyboard } from "./keyboards.js";
+
+// Shared library code called from both bot.ts's handlers and server.ts's
+// REST routes — tagged "bot-api" (not "bot") since it isn't specific to
+// either entrypoint. See lib/logger.ts's own doc comment for the field
+// convention this follows.
+const logger = createLogger("bot-api");
 
 /**
  * Cross-party Telegram push notifications (US-3.4/US-4.1/US-4.7's "notify
@@ -31,7 +38,9 @@ function delay(ms: number): Promise<void> {
  * Best-effort delivery with a couple of retries (US-3.4: "log and retry,
  * don't silently drop") — used independently per recipient so one failing
  * delivery (e.g. the other user blocked the bot) can't swallow one that
- * succeeds.
+ * succeeds. `label` must never carry a raw Telegram id (US-8.1's "no PII
+ * beyond internal user ids" AC) — every call site below passes an internal
+ * userId, never `actorTelegramId`/`chatId`.
  */
 export async function sendWithRetry(send: () => Promise<unknown>, label: string): Promise<void> {
   const attempts = 3;
@@ -41,7 +50,7 @@ export async function sendWithRetry(send: () => Promise<unknown>, label: string)
       return;
     } catch (err) {
       if (attempt === attempts) {
-        console.error(`[notifications] failed to deliver ${label} after ${attempts} attempts`, err);
+        logger.error({ event: "notification_delivery_failed", label, err }, "failed to deliver notification after retries");
         return;
       }
       await delay(300 * attempt);
@@ -60,11 +69,14 @@ export async function sendWithRetry(send: () => Promise<unknown>, label: string)
  * dialog immediately, so routes/v1/matching.ts passes `false` here to avoid
  * also pushing a redundant Telegram message to a user already looking at
  * the in-app match screen; the bot has no such in-app channel, so its swipe
- * handler leaves this at the default.
+ * handler leaves this at the default. `actorUserId` (internal id) is taken
+ * separately from `actorTelegramId` (needed for the actual send) purely so
+ * sendWithRetry's failure label never carries the raw Telegram id.
  */
 export async function notifyMatch(
   api: Api,
   actorTelegramId: bigint,
+  actorUserId: string,
   match: Match,
   otherUserId: string,
   options: { notifyActor?: boolean } = {},
@@ -76,7 +88,7 @@ export async function notifyMatch(
     notifyActor
       ? sendWithRetry(
           () => api.sendMessage(actorTelegramId.toString(), MATCH_FOUND_MESSAGE, { reply_markup: keyboard }),
-          `match notification to ${actorTelegramId}`,
+          `match notification to ${actorUserId}`,
         )
       : Promise.resolve(),
     other

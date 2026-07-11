@@ -21,6 +21,10 @@ const envSchema = z.object({
   // enforcement doesn't depend on reimplementing NextAuth's internal JWE
   // encryption in a second app.
   ADMIN_API_SECRET: z.string().min(32, "Admin API secret must be at least 32 characters"),
+  // EPIC 8 (US-8.4) — how many days of no activity (User.lastActiveAt)
+  // before the inactivity-nudge job considers a user for a re-engagement
+  // message. Configurable per the AC's own "e.g. 3 days" wording.
+  INACTIVITY_NUDGE_DAYS: z.coerce.number().positive().default(3),
 });
 
 export type Env = z.infer<typeof envSchema>;

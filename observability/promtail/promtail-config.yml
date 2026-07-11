@@ -1,0 +1,42 @@
+# EPIC 8 (US-8.1) — ships every container's stdout/stderr (all three
+# structured-JSON log sources: api, worker, and Docker's own capture of
+# nginx/postgres/redis) to Loki. Uses Docker's own service-discovery
+# (docker_sd_configs against the daemon socket, see docker-compose.yml's
+# read-only /var/run/docker.sock mount) rather than a static per-container
+# file list, so a future service added to docker-compose.yml is picked up
+# automatically with no promtail config change.
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+    relabel_configs:
+      # Docker prefixes container names with "/" — strip it so the
+      # `container` label in Grafana/Loki reads e.g. "ashenaiybot-api-1",
+      # not "/ashenaiybot-api-1".
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/(.*)"
+        target_label: container
+      - source_labels: ["__meta_docker_container_log_stream"]
+        target_label: stream
+    pipeline_stages:
+      # api/worker already emit structured JSON (see
+      # apps/bot-api/src/lib/logger.ts) — parse it so `service`/`level`/
+      # `event` become queryable Loki labels/fields instead of opaque text.
+      - json:
+          expressions:
+            service: service
+            level: level
+      - labels:
+          service:
+          level:

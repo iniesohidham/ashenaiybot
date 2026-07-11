@@ -1,5 +1,20 @@
 generator client {
   provider = "prisma-client-js"
+  // EPIC 8 live-verification pass discovered this: with no explicit
+  // binaryTargets, `prisma generate` running inside the Docker build stage
+  // (node:22-alpine) mis-detects the runtime's OpenSSL version and falls
+  // back to an "openssl-1.1.x" engine binary — but modern Alpine ships only
+  // OpenSSL 3.x (no libssl.so.1.1), so the runner stage's `node dist/index.js`
+  // crash-loops on `Error loading shared library libssl.so.1.1: No such
+  // file or directory`. This went uncaught by every prior epic's own "live
+  // verification" because none of them ran the actual prod
+  // docker-compose.yml multi-stage build+runner — EPIC 2/3/4/5's live-bot
+  // passes ran `tsx` directly, EPIC 6/7's live passes used
+  // docker-compose.dev.yml (bind-mounts source over the `deps` stage,
+  // `pnpm dev`, never reaches this `runner` stage at all). Explicit
+  // binaryTargets sidesteps the misdetection entirely by naming the correct
+  // pre-built engine instead of relying on runtime auto-detection.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -108,6 +123,17 @@ enum BroadcastStatus {
   completed
 }
 
+// EPIC 8 (US-8.3) — the fixed set of product events tracked in the Event
+// table. Deliberately narrow (not one row per message/swipe) — see
+// modules/events/service.ts's doc comment for why DAU stays computed from
+// operational tables rather than this log.
+enum EventType {
+  signup_completed
+  match_created
+  chat_ended
+  report_submitted
+}
+
 model User {
   id            String     @id @default(cuid())
   telegramId    BigInt     @unique
@@ -120,9 +146,27 @@ model User {
   // Set once the user taps through the 18+ attestation in EPIC 2 (US-2.2).
   ageAttestedAt DateTime?
   createdAt     DateTime   @default(now())
+  // EPIC 8 (US-8.4) — updated on every resolved bot/Mini-App request
+  // (modules/users/service.ts's findOrCreateUserByTelegramId, the single
+  // choke point both surfaces already resolve identity through), so the
+  // inactivity-nudge job can find users idle past a threshold without a
+  // dedicated "last seen" event stream.
+  lastActiveAt          DateTime?
+  // US-8.4's opt-out AC — surfaced in both bot Settings and Mini App
+  // Settings (dual-surface parity), defaults to false (opted in).
+  notificationsOptedOut Boolean   @default(false)
+  // Guards "at most one nudge per period" — set by the worker job when a
+  // nudge is actually sent, checked (not just lastActiveAt) so a user who
+  // stays inactive for months gets one nudge per period, not one every job
+  // tick.
+  lastNudgeSentAt       DateTime?
 
   profile Profile?
   matchPreference MatchPreference?
+  // EPIC 8 (US-8.3) — SetNull (not Cascade), same reasoning as
+  // Message.matchedPattern: a historical event record should survive the
+  // user later being soft-deleted, for audit/analytics continuity.
+  events Event[]
 
   swipesMade     SwipeAction[] @relation("SwipeActor")
   swipesReceived SwipeAction[] @relation("SwipeTarget")
@@ -364,4 +408,25 @@ model BanAppeal {
   resolvedByAdmin   AdminUser?      @relation("BanAppealResolvedBy", fields: [resolvedByAdminId], references: [id])
 
   @@index([status, createdAt])
+}
+
+// EPIC 8 (US-8.3) — a queryable log of key product events, backing the
+// Admin dashboard (US-7.6) instead of the ad-hoc per-metric Prisma queries
+// getDashboardMetrics() used before this epic. userId is nullable + SetNull
+// (not every event is attributable to a single user — e.g. match_created
+// involves two — and a historical event must survive that user's later
+// soft-deletion, same convention as Message.matchedPattern). metadata is a
+// free-form JSON bag (e.g. { matchId }, { sessionId, reason }) — no schema
+// enforced on it, same "no extra migration per new metadata field" tradeoff
+// BannedPattern's flat shape already accepts elsewhere in this schema.
+model Event {
+  id        String    @id @default(cuid())
+  type      EventType
+  userId    String?
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  metadata  Json?
+  createdAt DateTime  @default(now())
+
+  @@index([type, createdAt])
+  @@index([userId])
 }

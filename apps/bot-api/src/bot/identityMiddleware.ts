@@ -2,7 +2,10 @@ import type { NextFunction } from "grammy";
 import { BAN_APPEAL_MAX_LENGTH } from "@ashena/shared";
 import { findOrCreateUserByTelegramId } from "../modules/users/service.js";
 import { getLatestBanRecord, hasAppealForBan, submitBanAppeal } from "../modules/moderation/service.js";
+import { createLogger } from "../lib/logger.js";
 import type { AwaitingInputStore } from "./awaitingInput.js";
+
+const logger = createLogger("bot-api");
 import {
   ACCOUNT_DELETED_MESSAGE,
   BAN_APPEAL_ALREADY_SUBMITTED_MESSAGE,
@@ -114,7 +117,7 @@ export function createIdentityMiddleware(deps: IdentityMiddlewareDeps) {
         // same operation that flips status to "banned" — but if it ever
         // does, don't silently confirm a submission that never wrote
         // anything.
-        console.error(`[identityMiddleware] banned user ${userId} has no BanRecord to appeal against`);
+        logger.error({ event: "ban_appeal_missing_ban_record", userId }, "banned user has no BanRecord to appeal against");
       }
       await ctx.reply(BAN_APPEAL_SUBMITTED_MESSAGE);
       return;

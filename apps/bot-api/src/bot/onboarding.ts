@@ -3,6 +3,7 @@ import { BIO_MAX_LENGTH, isAdult, isGenderValue, parseBirthDateInput } from "@as
 import { findProfileByUserId, upsertProfile } from "../modules/profiles/service.js";
 import { deriveOnboardingStep, updateUser } from "../modules/users/service.js";
 import { getOrCreatePreference } from "../modules/matching/service.js";
+import { trackEvent } from "../modules/events/service.js";
 import type { BotContext } from "./context.js";
 import type { AwaitingInputStore, AwaitingMode } from "./awaitingInput.js";
 import {
@@ -164,6 +165,10 @@ export function registerOnboardingHandlers(bot: Bot<BotContext>, deps: Onboardin
       // would silently exclude this user from everyone else's search during
       // that window.
       await getOrCreatePreference(updated);
+      // EPIC 8 (US-8.3) — required onboarding (deriveOnboardingStep ===
+      // "complete") just finished; this branch only runs once per user
+      // (subsequent birth-date edits go through mode === "edit" below).
+      await trackEvent("signup_completed", userId);
       await startOptionalBioStep(ctx);
     } else {
       await ctx.reply(BIRTH_DATE_SAVED_MESSAGE);

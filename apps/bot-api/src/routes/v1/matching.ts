@@ -81,7 +81,7 @@ export function registerMatchingRoutes(app: FastifyInstance, env: Pick<Env, "TEL
       // notifyActor: false — this response body IS the actor's notification
       // (the Mini App shows its own match dialog immediately); only the
       // other party needs a Telegram push.
-      await notifyMatch(api, user.telegramId, match, targetUserId, { notifyActor: false });
+      await notifyMatch(api, user.telegramId, user.id, match, targetUserId, { notifyActor: false });
     }
     return { matched: match !== null, matchId: match?.id ?? null, stale: false };
   });

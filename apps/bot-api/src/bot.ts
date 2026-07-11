@@ -6,6 +6,7 @@ import { createInMemoryAwaitingInputStore } from "./bot/awaitingInput.js";
 import { registerOnboardingHandlers } from "./bot/onboarding.js";
 import { registerMatchingHandlers } from "./bot/matching.js";
 import { registerChatHandlers } from "./bot/chat.js";
+import type { Logger } from "./lib/logger.js";
 
 /**
  * identityMiddleware (US-1.4) resolves/creates the internal User record for
@@ -25,7 +26,7 @@ import { registerChatHandlers } from "./bot/chat.js";
  * queue/match flow on top of it, registered after onboarding so its handlers
  * pick up the callback/text data onboarding passes through via next().
  */
-export function buildBot(token: string, miniAppUrl: string, redisUrl: string): Bot<BotContext> {
+export function buildBot(token: string, miniAppUrl: string, redisUrl: string, logger: Logger): Bot<BotContext> {
   const bot = new Bot<BotContext>(token);
 
   const awaitingInput = createInMemoryAwaitingInputStore();
@@ -42,7 +43,10 @@ export function buildBot(token: string, miniAppUrl: string, redisUrl: string): B
   // process — see index.ts) on any single update that throws, e.g. a
   // Telegram API error. Log and keep polling instead.
   bot.catch((err) => {
-    console.error("[bot] unhandled error while processing update", err.ctx.update.update_id, err.error);
+    logger.error(
+      { event: "bot_unhandled_error", updateId: err.ctx.update.update_id, err: err.error },
+      "unhandled error while processing update",
+    );
   });
 
   return bot;

@@ -1,0 +1,18 @@
+# EPIC 8 (US-8.2) — placeholder Alertmanager config: the AC only asks that
+# "basic alerting rules exist for critical thresholds" (see
+# ../prometheus/alert_rules.yml), not that they page a real human yet — this
+# project has no chat-ops/on-call channel decided (same open-question
+# category as the PRD's other undecided integrations, e.g. the NSFW
+# classifier). `receiver: null-receiver` intentionally has no `*_configs`
+# block, so alerts are silently swallowed rather than erroring — replace it
+# with a real receiver (webhook to the bot's own Telegram API, email, etc.)
+# before relying on this for production paging.
+route:
+  receiver: null-receiver
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: null-receiver

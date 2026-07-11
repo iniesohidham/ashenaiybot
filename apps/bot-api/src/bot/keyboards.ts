@@ -44,6 +44,8 @@ import {
   SETTINGS_BACK_LABEL,
   SETTINGS_EDIT_AGE_RANGE_LABEL,
   SETTINGS_EDIT_GENDERS_LABEL,
+  SETTINGS_ENABLE_NOTIFICATIONS_LABEL,
+  SETTINGS_DISABLE_NOTIFICATIONS_LABEL,
   SWIPE_LIKE_LABEL,
   SWIPE_PASS_LABEL,
 } from "./copy.js";
@@ -75,6 +77,7 @@ export const CB = {
   swipePass: (candidateId: string): string => `swipe:pass:${candidateId}`,
   browseBack: "browse:back",
   settingsBack: "settings:back",
+  settingsToggleNotifications: "settings:notif:toggle",
   prefEditGenders: "pref:edit:genders",
   prefEditAgeRange: "pref:edit:age",
   prefGenderToggle: (value: GenderValue): string => `pref:gender:t:${value}`,
@@ -284,11 +287,17 @@ export function candidateCardKeyboard(candidateId: string): InlineKeyboard {
     .text(EDIT_MENU_BACK_LABEL, CB.browseBack);
 }
 
-export function settingsMenuKeyboard(): InlineKeyboard {
+/** US-8.4's opt-out toggle rides along in this same menu (not a new one) — `notificationsOptedOut` decides which of the two labels to show, so the button always describes the action it performs, never the current state. */
+export function settingsMenuKeyboard(notificationsOptedOut: boolean): InlineKeyboard {
   return new InlineKeyboard()
     .text(SETTINGS_EDIT_GENDERS_LABEL, CB.prefEditGenders)
     .row()
     .text(SETTINGS_EDIT_AGE_RANGE_LABEL, CB.prefEditAgeRange)
+    .row()
+    .text(
+      notificationsOptedOut ? SETTINGS_ENABLE_NOTIFICATIONS_LABEL : SETTINGS_DISABLE_NOTIFICATIONS_LABEL,
+      CB.settingsToggleNotifications,
+    )
     .row()
     .text(SETTINGS_BACK_LABEL, CB.settingsBack);
 }

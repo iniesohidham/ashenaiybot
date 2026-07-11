@@ -1,7 +1,7 @@
 import type { Bot } from "grammy";
 import type { Redis } from "ioredis";
 import { parseAgeRangeInput, type GenderValue } from "@ashena/shared";
-import { deriveOnboardingStep } from "../modules/users/service.js";
+import { deriveOnboardingStep, updateUser } from "../modules/users/service.js";
 import { notifyMatch } from "./notifications.js";
 import {
   checkAndConsumeSwipeRateLimit,
@@ -27,6 +27,8 @@ import {
   PREF_GENDER_PROMPT,
   PREF_GENDER_SAVED_MESSAGE,
   SETTINGS_MENU_MESSAGE,
+  SETTINGS_NOTIFICATIONS_DISABLED_MESSAGE,
+  SETTINGS_NOTIFICATIONS_ENABLED_MESSAGE,
   SWIPE_CARD_EXPIRED_MESSAGE,
   SWIPE_RATE_LIMITED_MESSAGE,
   formatCandidateCard,
@@ -83,7 +85,7 @@ export function registerMatchingHandlers(bot: Bot<BotContext>, deps: MatchingDep
   async function sendSettingsMenu(ctx: BotContext): Promise<void> {
     const preference = await getOrCreatePreference(ctx.internalUser);
     await ctx.reply(`${SETTINGS_MENU_MESSAGE}\n\n${formatPreferenceSummary(preference)}`, {
-      reply_markup: settingsMenuKeyboard(),
+      reply_markup: settingsMenuKeyboard(ctx.internalUser.notificationsOptedOut),
     });
   }
 
@@ -151,7 +153,7 @@ export function registerMatchingHandlers(bot: Bot<BotContext>, deps: MatchingDep
       await ctx.answerCallbackQuery();
       const { match } = await recordSwipeAndCheckMatch(userId, swipe.candidateId, swipe.isLike ? "like" : "pass");
       if (match) {
-        await notifyMatch(ctx.api, ctx.internalUser.telegramId, match, swipe.candidateId);
+        await notifyMatch(ctx.api, ctx.internalUser.telegramId, ctx.internalUser.id, match, swipe.candidateId);
       }
       await showNextCandidateOrEmpty(ctx);
       return;
@@ -166,6 +168,20 @@ export function registerMatchingHandlers(bot: Bot<BotContext>, deps: MatchingDep
     if (data === CB.settingsBack) {
       await ctx.answerCallbackQuery();
       await sendMainMenu(ctx);
+      return;
+    }
+
+    if (data === CB.settingsToggleNotifications) {
+      const updated = await updateUser(userId, {
+        notificationsOptedOut: !ctx.internalUser.notificationsOptedOut,
+      });
+      ctx.internalUser = updated;
+      await ctx.answerCallbackQuery({
+        text: updated.notificationsOptedOut
+          ? SETTINGS_NOTIFICATIONS_DISABLED_MESSAGE
+          : SETTINGS_NOTIFICATIONS_ENABLED_MESSAGE,
+      });
+      await sendSettingsMenu(ctx);
       return;
     }
 

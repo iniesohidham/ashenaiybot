@@ -1,0 +1,41 @@
+{
+  "title": "BullMQ Queue Depth",
+  "uid": "ashena-bullmq-depth",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "tags": ["ashena", "epic8"],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Job counts by queue and state",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "bullmq_queue_depth",
+          "legendFormat": "{{queue}} - {{state}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Waiting jobs (current)",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 10 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "bullmq_queue_depth{state=\"waiting\"}",
+          "legendFormat": "{{queue}}"
+        }
+      ]
+    }
+  ]
+}

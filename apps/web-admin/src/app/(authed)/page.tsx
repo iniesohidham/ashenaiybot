@@ -7,6 +7,9 @@ export default async function DashboardPage() {
   const trendDau = metrics.trend.map((t) => t.dau);
   const trendSignups = metrics.trend.map((t) => t.newSignups);
   const trendMatches = metrics.trend.map((t) => t.matchesCreated);
+  // EPIC 8 (US-8.3) — new series, backed by the Event table.
+  const trendChatsEnded = metrics.trend.map((t) => t.chatsEnded);
+  const trendReportsSubmitted = metrics.trend.map((t) => t.reportsSubmitted);
 
   return (
     <div className="flex flex-col gap-6">
@@ -15,6 +18,12 @@ export default async function DashboardPage() {
         <StatTile label="کاربران فعال امروز (DAU)" value={metrics.today.dau} trend={trendDau} />
         <StatTile label="پروفایل‌های جدید امروز" value={metrics.today.newSignups} trend={trendSignups} />
         <StatTile label="مچ‌های جدید امروز" value={metrics.today.matchesCreated} trend={trendMatches} />
+        <StatTile label="گفتگوهای پایان‌یافته امروز" value={metrics.today.chatsEnded} trend={trendChatsEnded} />
+        <StatTile
+          label="گزارش‌های ثبت‌شده امروز"
+          value={metrics.today.reportsSubmitted}
+          trend={trendReportsSubmitted}
+        />
         <StatTile label="گفتگوهای فعال" value={metrics.today.activeSessions} />
         <StatTile label="گزارش‌های در انتظار رسیدگی" value={metrics.today.pendingReports} />
         <StatTile label="عکس‌های در انتظار بررسی" value={metrics.today.pendingPhotos} />

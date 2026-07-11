@@ -7,6 +7,7 @@ import {
   type Message,
   type MessageType,
 } from "@ashena/db";
+import { trackEvent } from "../events/service.js";
 
 // EPIC 4 (US-4.1..4.7) — chat session lifecycle + message persistence. Redis
 // backs a fast-path "which session is this user currently in" pointer
@@ -288,6 +289,15 @@ export async function endSession(
   const session = await prisma.chatSession.findUniqueOrThrow({ where: { id: sessionId } });
   const match = await prisma.match.findUniqueOrThrow({ where: { id: session.matchId } });
   await clearActivePointers(redis, match, sessionId);
+  // EPIC 8 (US-8.3) — the conditional updateMany above already guarantees
+  // this branch runs at most once per session (idempotency doc comment
+  // above), so no separate dedup guard is needed here. `endedByUserId` may
+  // be null (system-initiated, e.g. idle_timeout) — Event.userId accepts
+  // that the same way Report.reporterId already does for the keyword filter.
+  // Not awaited — trackEvent() never throws by its own contract, so
+  // awaiting it here would only add latency to every chat-ending caller
+  // (report/block/end-chat/idle-timeout) for no correctness benefit.
+  void trackEvent("chat_ended", endedByUserId, { sessionId, matchId: match.id, reason });
   return { session, match };
 }
 

@@ -93,3 +93,10 @@ export const SETTINGS_DELETE_CONFIRM_BODY =
 export const SETTINGS_DELETE_CONFIRM_ACTION_LABEL = "بله، حسابم رو حذف کن";
 export const SETTINGS_DELETE_CANCEL_LABEL = "منصرف شدم";
 export const SETTINGS_DELETED_MESSAGE = "حسابت حذف شد.";
+
+// EPIC 8 (US-8.4) — inactivity-nudge opt-out, same field the bot's own
+// settings menu toggles.
+export const SETTINGS_NOTIFICATIONS_TITLE = "یادآوری‌ها";
+export const SETTINGS_NOTIFICATIONS_TOGGLE_LABEL = "یادآوری غیرفعالی";
+export const SETTINGS_NOTIFICATIONS_TOGGLE_DESCRIPTION =
+  "اگه مدتی سر نزنی، یه پیام یادآوری دریافت می‌کنی.";

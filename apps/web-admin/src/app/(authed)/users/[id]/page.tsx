@@ -63,6 +63,14 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
             <p className="text-sm">تعداد مچ‌ها: {detail.matchCount}</p>
             <p className="text-sm">گزارش‌های ثبت‌شده توسط این کاربر: {detail.reportsFiledCount}</p>
             <p className="text-sm">گزارش‌های دریافتی: {detail.reportsReceived.length}</p>
+            {/* EPIC 8 (US-8.4) */}
+            <p className="text-sm">آخرین فعالیت: {fmt(detail.user.lastActiveAt)}</p>
+            <p className="text-sm">
+              یادآوری غیرفعالی: {detail.user.notificationsOptedOut ? "غیرفعال شده توسط کاربر" : "فعال"}
+            </p>
+            {detail.user.lastNudgeSentAt ? (
+              <p className="text-sm">آخرین یادآوری ارسال‌شده: {fmt(detail.user.lastNudgeSentAt)}</p>
+            ) : null}
           </CardContent>
         </Card>
         <UserActions userId={detail.user.id} status={detail.user.status} isAdmin={isAdmin} />

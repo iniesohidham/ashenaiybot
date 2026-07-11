@@ -1,0 +1,66 @@
+{
+  "title": "Postgres & Redis Health",
+  "uid": "ashena-db-health",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "tags": ["ashena", "epic8"],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Postgres up",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "pg_up", "legendFormat": "postgres" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Redis up",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "redis_up", "legendFormat": "redis" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Postgres active connections",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(pg_stat_database_numbackends)",
+          "legendFormat": "active connections"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Redis connected clients / memory",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "redis_connected_clients",
+          "legendFormat": "connected clients"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "redis_memory_used_bytes",
+          "legendFormat": "memory used (bytes)"
+        }
+      ]
+    }
+  ]
+}

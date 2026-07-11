@@ -1,0 +1,14 @@
+# EPIC 8 (US-8.2) — file-based dashboard provider; every *.json under
+# ../../dashboards/ (bind-mounted to /var/lib/grafana/dashboards, see
+# docker-compose.yml) is auto-loaded on Grafana startup.
+apiVersion: 1
+
+providers:
+  - name: ashena
+    orgId: 1
+    folder: "Ashenaiy"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

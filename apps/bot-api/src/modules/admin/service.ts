@@ -20,6 +20,7 @@ import {
   ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS,
 } from "@ashena/shared";
 import { invalidatePatternCache } from "../moderation/service.js";
+import { countEventsByDay } from "../events/service.js";
 
 // EPIC 7 (Admin Panel). See CLAUDE.md's architecture notes for why this
 // module owns all admin-only logic (auth, user search/detail, banned-pattern
@@ -119,7 +120,18 @@ export async function searchUsersById(idPrefix: string, limit = 20): Promise<Use
 }
 
 export interface UserDetail {
-  user: Pick<User, "id" | "status" | "gender" | "birthDate" | "ageAttestedAt" | "createdAt">;
+  user: Pick<
+    User,
+    | "id"
+    | "status"
+    | "gender"
+    | "birthDate"
+    | "ageAttestedAt"
+    | "createdAt"
+    | "lastActiveAt"
+    | "notificationsOptedOut"
+    | "lastNudgeSentAt"
+  >;
   profile: Profile | null;
   matchCount: number;
   reportsFiledCount: number;
@@ -132,7 +144,20 @@ export interface UserDetail {
 export async function getUserDetail(userId: string): Promise<UserDetail | null> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, status: true, gender: true, birthDate: true, ageAttestedAt: true, createdAt: true },
+    select: {
+      id: true,
+      status: true,
+      gender: true,
+      birthDate: true,
+      ageAttestedAt: true,
+      createdAt: true,
+      // EPIC 8 (US-8.4) — surfaced here so a moderator investigating a
+      // notifications-related support question ("I keep getting nudged
+      // after opting out") can actually see this state, not just infer it.
+      lastActiveAt: true,
+      notificationsOptedOut: true,
+      lastNudgeSentAt: true,
+    },
   });
   if (!user) return null;
 
@@ -221,6 +246,11 @@ export interface DailyTrendEntry {
   dau: number;
   newSignups: number;
   matchesCreated: number;
+  // EPIC 8 (US-8.3) — new trend series, backed by the Event table alongside
+  // newSignups/matchesCreated below (see getDashboardMetrics's doc comment
+  // for why dau stays on the older operational-table query).
+  chatsEnded: number;
+  reportsSubmitted: number;
 }
 
 export interface DashboardMetrics {
@@ -228,6 +258,11 @@ export interface DashboardMetrics {
     dau: number;
     newSignups: number;
     matchesCreated: number;
+    // EPIC 8 (US-8.3) — same "today" + sparkline-trend shape as
+    // dau/newSignups/matchesCreated above, now that the Event table backs
+    // both.
+    chatsEnded: number;
+    reportsSubmitted: number;
     activeSessions: number;
     pendingReports: number;
     pendingPhotos: number;
@@ -244,18 +279,32 @@ export interface DashboardMetrics {
  * separate per-day queries is simple and fine at "early-stage product"
  * volumes (the AC's own performance bar); worth revisiting with a single
  * groupBy if this ever becomes a real cost.
+ *
+ * EPIC 8 (US-8.3): newSignups/matchesCreated (plus the new chatsEnded/
+ * reportsSubmitted series) now read from the Event table
+ * (modules/events/service.ts's countEventsByDay) instead of the ad-hoc
+ * prisma.user.count/prisma.match.count this function used pre-EPIC-8 — per
+ * the AC's "Dashboard queries read from this table rather than computing
+ * ad-hoc from operational tables". `dau` deliberately stays on
+ * countDistinctActiveUsersForDay (operational tables): it's an aggregate
+ * over *any* activity, not one of the AC's four named discrete events, and
+ * moving it to the Event table would mean tracking an Event row per chat
+ * message/swipe — see events/service.ts's own doc comment for that
+ * tradeoff.
  */
 export async function getDashboardMetrics(days = 7, now: Date = new Date()): Promise<DashboardMetrics> {
   const bounds = Array.from({ length: days }, (_, i) => utcDayBounds(days - 1 - i, now));
 
   const trend = await Promise.all(
     bounds.map(async ({ start, end, date }) => {
-      const [dau, newSignups, matchesCreated] = await Promise.all([
+      const [dau, newSignups, matchesCreated, chatsEnded, reportsSubmitted] = await Promise.all([
         countDistinctActiveUsersForDay(start, end),
-        prisma.user.count({ where: { createdAt: { gte: start, lt: end } } }),
-        prisma.match.count({ where: { createdAt: { gte: start, lt: end } } }),
+        countEventsByDay("signup_completed", start, end),
+        countEventsByDay("match_created", start, end),
+        countEventsByDay("chat_ended", start, end),
+        countEventsByDay("report_submitted", start, end),
       ]);
-      return { date, dau, newSignups, matchesCreated };
+      return { date, dau, newSignups, matchesCreated, chatsEnded, reportsSubmitted };
     }),
   );
 
@@ -275,6 +324,8 @@ export async function getDashboardMetrics(days = 7, now: Date = new Date()): Pro
       dau: todayEntry.dau,
       newSignups: todayEntry.newSignups,
       matchesCreated: todayEntry.matchesCreated,
+      chatsEnded: todayEntry.chatsEnded,
+      reportsSubmitted: todayEntry.reportsSubmitted,
       activeSessions,
       pendingReports,
       pendingPhotos,

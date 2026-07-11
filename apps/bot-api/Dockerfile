@@ -1,5 +1,20 @@
 # syntax=docker/dockerfile:1
 FROM node:22-alpine AS base
+# EPIC 8 live-verification pass discovered this: node:22-alpine has no
+# `openssl` package installed, so Prisma's own OpenSSL-version detection
+# (both at `prisma generate` time in the `build` stage below, AND again at
+# runtime in the `runner` stage — it's a live check, not baked into the
+# generated client) can't run and silently falls back to guessing
+# "openssl-1.1.x", which doesn't exist as a loadable library on modern
+# Alpine (libssl.so.1.1 was dropped in favor of libssl.so.3) — the container
+# then crash-loops with "Error loading shared library libssl.so.1.1: No
+# such file or directory" on its very first Prisma query. Installing the
+# real `openssl` package fixes detection at both points (so "native" in
+# packages/db/prisma/schema.prisma's binaryTargets correctly resolves to
+# the openssl-3.0.x engine that actually matches this image), which is why
+# this line lives in `base` — every later stage (deps/build/runner) derives
+# from it.
+RUN apk add --no-cache openssl
 RUN corepack enable
 WORKDIR /repo
 

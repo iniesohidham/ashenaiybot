@@ -35,6 +35,8 @@ export interface MeDto {
   gender: Gender | null;
   birthDate: string | null;
   status: UserStatus;
+  // EPIC 8 (US-8.4) — the inactivity-nudge opt-out toggle.
+  notificationsOptedOut: boolean;
   profile: ProfileDto | null;
 }
 

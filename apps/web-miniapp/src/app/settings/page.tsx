@@ -35,6 +35,9 @@ import {
   SETTINGS_DELETE_CONFIRM_BODY,
   SETTINGS_DELETE_CONFIRM_TITLE,
   SETTINGS_GENDER_PREF_LABEL,
+  SETTINGS_NOTIFICATIONS_TITLE,
+  SETTINGS_NOTIFICATIONS_TOGGLE_DESCRIPTION,
+  SETTINGS_NOTIFICATIONS_TOGGLE_LABEL,
   SETTINGS_PREFERENCES_TITLE,
   SETTINGS_SAVED_MESSAGE,
   SETTINGS_SAVE_LABEL,
@@ -162,6 +165,54 @@ function PreferencesGroup() {
   );
 }
 
+/** US-8.4 — a single toggle, styled as a switch-like pill rather than pulling in a new Radix Switch primitive for one control (no `components/ui/switch.tsx` exists yet in this app). */
+function NotificationsGroup() {
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useQuery({ queryKey: ["me"], queryFn: api.getMe });
+
+  const toggleMutation = useMutation({
+    mutationFn: (notificationsOptedOut: boolean) => api.updateAccount({ notificationsOptedOut }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["me"] }),
+  });
+
+  const optedOut = data?.notificationsOptedOut ?? false;
+
+  return (
+    <div>
+      <SectionHeader>{SETTINGS_NOTIFICATIONS_TITLE}</SectionHeader>
+      <Card className="overflow-hidden">
+        <CardContent className="flex items-center justify-between gap-4 pt-4">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium">{SETTINGS_NOTIFICATIONS_TOGGLE_LABEL}</span>
+            <span className="text-xs text-muted-foreground">{SETTINGS_NOTIFICATIONS_TOGGLE_DESCRIPTION}</span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={!optedOut}
+            disabled={isLoading || toggleMutation.isPending}
+            onClick={() => toggleMutation.mutate(!optedOut)}
+            className={cn(
+              "relative h-7 w-12 shrink-0 rounded-full border border-border transition-colors",
+              !optedOut ? "bg-primary" : "bg-muted",
+            )}
+          >
+            {/* Logical inset (start/end), not translate-x — this app is RTL
+                (dir="rtl", see app/layout.tsx); Tailwind's logical "start"
+                utilities auto-flip with text direction, translate-x wouldn't. */}
+            <span
+              className={cn(
+                "absolute top-0.5 h-5 w-5 rounded-full bg-background shadow transition-[inset-inline-start]",
+                !optedOut ? "start-6" : "start-1",
+              )}
+            />
+          </button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function BlockedUsersGroup() {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["blocked"], queryFn: api.getBlockedUsers });
@@ -245,6 +296,7 @@ export default function SettingsPage() {
     <main className="flex flex-col gap-6 p-4">
       <h1 className="text-2xl font-bold text-foreground">{SETTINGS_TITLE}</h1>
       <PreferencesGroup />
+      <NotificationsGroup />
       <BlockedUsersGroup />
       <DeleteAccountGroup />
     </main>

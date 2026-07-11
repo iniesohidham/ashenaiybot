@@ -6,6 +6,7 @@ import { createMiniAppAuthPreHandler } from "../../plugins/miniAppAuth.js";
 import { findProfileByUserId, upsertProfile } from "../../modules/profiles/service.js";
 import { deriveOnboardingStep, updateUser } from "../../modules/users/service.js";
 import { getOrCreatePreference } from "../../modules/matching/service.js";
+import { trackEvent } from "../../modules/events/service.js";
 import { sendTelegramFile } from "../../lib/telegramFile.js";
 import { sendApiError, zodErrorToFields } from "../../lib/apiError.js";
 import type { RouteDeps } from "./deps.js";
@@ -18,9 +19,18 @@ import type { Env } from "../../env.js";
  * reach a client) — every response derived from a `User` goes through this,
  * never `return user`/`return updateUser(...)` directly.
  */
-async function toMeResponse(user: Pick<User, "id" | "gender" | "birthDate" | "status">) {
+async function toMeResponse(
+  user: Pick<User, "id" | "gender" | "birthDate" | "status" | "notificationsOptedOut">,
+) {
   const profile = await findProfileByUserId(user.id);
-  return { id: user.id, gender: user.gender, birthDate: user.birthDate, status: user.status, profile };
+  return {
+    id: user.id,
+    gender: user.gender,
+    birthDate: user.birthDate,
+    status: user.status,
+    notificationsOptedOut: user.notificationsOptedOut,
+    profile,
+  };
 }
 
 /**
@@ -54,10 +64,12 @@ export function registerProfileRoutes(app: FastifyInstance, env: Pick<Env, "TELE
     // Same re-editable-post-onboarding capability as the bot's edit menu
     // (CB.editGender/CB.editBirthDate) — updateUser() is the single write
     // path both already share.
-    const { gender, birthDate } = parsed.data;
+    const wasComplete = deriveOnboardingStep(user) === "complete";
+    const { gender, birthDate, notificationsOptedOut } = parsed.data;
     const updated = await updateUser(user.id, {
       ...(gender !== undefined ? { gender } : {}),
       ...(birthDate !== undefined ? { birthDate: new Date(birthDate) } : {}),
+      ...(notificationsOptedOut !== undefined ? { notificationsOptedOut } : {}),
     });
     // Mirrors onboarding.ts's birth-date-completion step: the moment
     // required onboarding becomes "complete", lazily create the default
@@ -69,6 +81,14 @@ export function registerProfileRoutes(app: FastifyInstance, env: Pick<Env, "TELE
     // harmless to also call this on every subsequent post-onboarding edit.
     if (deriveOnboardingStep(updated) === "complete") {
       await getOrCreatePreference(updated);
+      // EPIC 8 (US-8.3) — fire only on the actual completion transition
+      // (`wasComplete` captured from the pre-update `user`, above), not on
+      // every subsequent edit past onboarding — mirrors onboarding.ts's own
+      // "only from the mode === 'onboarding' branch" guard against
+      // double-counting the same signup.
+      if (!wasComplete) {
+        await trackEvent("signup_completed", updated.id);
+      }
     }
     return toMeResponse(updated);
   });

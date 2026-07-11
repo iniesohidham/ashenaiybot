@@ -19,6 +19,7 @@ import {
   SPAM_DUPLICATE_SESSION_THRESHOLD,
 } from "@ashena/shared";
 import { endSession, listActiveSessionsForUser, type EndSessionResult } from "../chat/service.js";
+import { trackEvent } from "../events/service.js";
 
 // EPIC 5 (US-5.1, US-5.4 minimal slice from EPIC 4; the rest of EPIC 5 —
 // US-5.1's monitoring hook, US-5.2's photo queue, US-5.3's report triage,
@@ -121,16 +122,23 @@ export function invalidatePatternCache(): void {
 const HIGH_SEVERITY_REASONS: ReportReason[] = ["suspected_minor"];
 
 /** reporterId is null for system-generated reports (the keyword filter flagging a high-severity match, not a user-submitted report). */
-export function fileReport(
+export async function fileReport(
   reporterId: string | null,
   reportedUserId: string,
   sessionId: string | null,
   reason: ReportReason,
 ): Promise<Report> {
   const severity: ReportSeverity = HIGH_SEVERITY_REASONS.includes(reason) ? "high" : "normal";
-  return prisma.report.create({
+  const report = await prisma.report.create({
     data: { reporterId, reportedUserId, sessionId, reason, severity },
   });
+  // EPIC 8 (US-8.3) — reporterId may be null (the keyword filter's
+  // auto-filed reports, same nullability Report.reporterId itself already
+  // documents), Event.userId accepts that unchanged. Not awaited —
+  // trackEvent() never throws by its own contract, so awaiting it here
+  // would only add latency to report filing for no correctness benefit.
+  void trackEvent("report_submitted", reporterId, { reportId: report.id, reportedUserId, reason, severity });
+  return report;
 }
 
 /**

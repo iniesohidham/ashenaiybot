@@ -12,6 +12,21 @@ export function findUserByTelegramId(telegramId: bigint): Promise<User | null> {
  * Finds the User for a Telegram id, creating a bare record on first contact
  * (gender/birthDate are collected later by EPIC 2 onboarding). Uses upsert
  * so concurrent first contacts (e.g. double /start) can't race into two rows.
+ *
+ * EPIC 8 (US-8.4): also the single choke point both surfaces (bot via
+ * identityMiddleware.ts, Mini App via miniAppAuth.ts) already resolve
+ * identity through on every request — stamping `lastActiveAt` here means
+ * the inactivity-nudge job's "who's idle" query needs no separate
+ * per-message/per-swipe tracking call anywhere else. This does write on
+ * every single request rather than only when stale (an adversarial review
+ * flagged the write-amplification cost on the app's highest-frequency code
+ * path) — accepted deliberately: the alternative (skip the write unless
+ * `lastActiveAt` is already more than a few minutes old) needs a read
+ * before the write, which costs more than the single indexed-PK timestamp
+ * UPDATE it would save at this product's current volume. Revisit if this
+ * ever shows up as a real cost, same "simple and fine at early-stage
+ * product volumes" bar the rest of this codebase already applies elsewhere
+ * (e.g. getDashboardMetrics's per-day query loop).
  */
 export function findOrCreateUserByTelegramId(params: {
   telegramId: bigint;
@@ -19,10 +34,11 @@ export function findOrCreateUserByTelegramId(params: {
 }): Promise<User> {
   return prisma.user.upsert({
     where: { telegramId: params.telegramId },
-    update: {},
+    update: { lastActiveAt: new Date() },
     create: {
       telegramId: params.telegramId,
       languageCode: params.languageCode,
+      lastActiveAt: new Date(),
     },
   });
 }
@@ -33,6 +49,7 @@ export interface UpdateUserInput {
   languageCode?: string;
   ageAttestedAt?: Date;
   status?: UserStatus;
+  notificationsOptedOut?: boolean;
 }
 
 export function updateUser(id: string, input: UpdateUserInput): Promise<User> {
